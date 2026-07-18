@@ -158,6 +158,33 @@ body.dark .nav { background:rgba(9,21,33,.94); }
 .find-time-entry strong { display:block; font-size:.82rem; color:var(--text); line-height:1.15; }
 .find-time-entry span { display:block; font-size:.68rem; color:var(--muted); margin-top:1px; }
 .find-time-entry .btn { flex-shrink:0; min-height:34px; padding:7px 13px; }
+.booking-mode-switch {
+  display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0 0 12px;
+  padding:6px; border:1px solid var(--border); border-radius:16px; background:var(--surface);
+}
+.booking-mode-btn {
+  border:1px solid transparent; border-radius:11px; padding:10px 12px; background:transparent;
+  color:var(--muted); font:inherit; text-align:left; cursor:pointer; transition:.18s ease;
+}
+.booking-mode-btn strong { display:block; color:inherit; font-size:.84rem; }
+.booking-mode-btn span { display:block; margin-top:2px; font-size:.64rem; line-height:1.25; }
+.booking-mode-btn.active {
+  color:var(--navy); background:rgba(var(--lime-rgb),.17); border-color:rgba(var(--lime-rgb),.45);
+  box-shadow:0 6px 18px rgba(24,60,42,.08);
+}
+.event-package-info {
+  display:none; margin:-2px 0 12px; padding:13px 14px; border-radius:15px;
+  border:1px solid rgba(var(--lime-rgb),.42); background:linear-gradient(135deg,rgba(var(--lime-rgb),.17),rgba(var(--ac),.06));
+}
+.event-package-info.show { display:block; }
+.event-package-info strong { display:block; color:var(--navy); font-size:.88rem; }
+.event-package-info p { margin:4px 0 9px; color:var(--muted); font-size:.7rem; line-height:1.45; }
+.event-package-facts { display:flex; flex-wrap:wrap; gap:6px; }
+.event-package-facts span { padding:5px 8px; border-radius:999px; background:var(--surface); color:var(--text); font-size:.64rem; font-weight:800; }
+.event-details-card { display:none; margin-top:13px; padding:13px; border:1px solid rgba(var(--lime-rgb),.38); border-radius:14px; background:rgba(var(--lime-rgb),.08); }
+.event-details-card.show { display:block; }
+.event-details-title { margin-bottom:10px; color:var(--navy); font-weight:900; font-size:.82rem; }
+body.dark .booking-mode-btn.active, body.dark .event-package-info strong, body.dark .event-details-title { color:var(--lime); }
 .shared-date-entry {
   display:flex; align-items:center; justify-content:space-between; gap:12px;
   margin:-4px 0 14px; padding:10px 12px;
@@ -590,6 +617,13 @@ body.dark .shared-date-display {
   color:var(--muted); margin-bottom:6px;
 }
 @media(max-width:700px) { .court-tabs-hint { display:block; } }
+@media(max-width:700px) {
+  .booking-mode-switch { gap:5px; padding:5px; border-radius:13px; }
+  .booking-mode-btn { padding:9px 8px; }
+  .booking-mode-btn strong { font-size:.76rem; }
+  .booking-mode-btn span { font-size:.59rem; }
+  .event-package-info { padding:11px 12px; }
+}
 
 /* ── ACTIVE COURT MOBILE HEADER ── */
 .cc-mobile-hd {
@@ -3006,13 +3040,26 @@ body.host-mode .courts { padding-bottom:140px; }
 <!-- COURTS -->
 <div class="sec" id="courts" style="padding-top:24px">
   <div class="sec-hd">
-    <h2>🏟️ BOOK THE MAIN COURT</h2>
-    <p>Choose your date and any available court hours, then continue.</p>
+    <h2 id="courtsHeading">🏟️ BOOK THE MAIN COURT</h2>
+    <p id="courtsLead">Choose your date and any available court hours, then continue.</p>
+  </div>
+  <div class="booking-mode-switch" role="tablist" aria-label="Booking type">
+    <button class="booking-mode-btn active" id="regularModeBtn" type="button" role="tab" aria-selected="true" onclick="setBookingMode('regular')">
+      <strong>🏓 Regular Booking</strong><span>Standard hourly court rates</span>
+    </button>
+    <button class="booking-mode-btn" id="eventModeBtn" type="button" role="tab" aria-selected="false" onclick="setBookingMode('event')">
+      <strong>🎉 Event Package</strong><span>4+ hours · ₱380/hour</span>
+    </button>
+  </div>
+  <div class="event-package-info" id="eventPackageInfo">
+    <strong>Host your event at Backyard Pickle</strong>
+    <p>For birthdays, family gatherings, team building, and pickleball clinics. Setup and cleanup must fit within the reserved hours.</p>
+    <div class="event-package-facts"><span>Minimum 4 hours</span><span>₱380/hour</span><span>₱1,520 court minimum</span><span>Up to 50 guests</span><span>Full payment only</span></div>
   </div>
   <div class="find-time-entry">
     <div>
       <strong>Find an available time</strong>
-      <span>Search the Main Court by date and duration.</span>
+      <span id="findTimeCopy">Search the Main Court by date and duration.</span>
     </div>
     <button class="btn btn-p btn-sm" type="button" onclick="openFindTimeModal()">Search</button>
   </div>
@@ -3064,7 +3111,7 @@ body.host-mode .courts { padding-bottom:140px; }
     <div class="bk-modal-hd">
       <div>
         <div class="bk-modal-court" id="findTimeTitle">Find Available Time</div>
-        <div class="bk-modal-meta">Search all courts for a consecutive available slot.</div>
+        <div class="bk-modal-meta" id="findTimeMeta">Search the Main Court for a consecutive available slot.</div>
       </div>
       <button class="bk-modal-x" type="button" onclick="closeFindTimeModal()" aria-label="Close">&times;</button>
     </div>
@@ -3220,6 +3267,30 @@ body.host-mode .courts { padding-bottom:140px; }
           <div class="fg">
             <label class="fl" for="bEmail">Email Address</label>
             <input type="email" class="fi" id="bEmail" placeholder="youremail@gmail.com" autocomplete="off" />
+          </div>
+          <div class="event-details-card" id="eventDetailsFields">
+            <div class="event-details-title">🎉 Event Details</div>
+            <div class="frow">
+              <div class="fg" style="margin:0">
+                <label class="fl" for="bEventType">Event Type</label>
+                <select class="fi" id="bEventType">
+                  <option value="">Select event type</option>
+                  <option value="birthday">Birthday Celebration</option>
+                  <option value="family">Family Gathering</option>
+                  <option value="team_building">Team Building</option>
+                  <option value="pickleball_clinic">Pickleball Clinic / Training</option>
+                  <option value="other">Other Event</option>
+                </select>
+              </div>
+              <div class="fg" style="margin:0">
+                <label class="fl" for="bEventGuests">Estimated Guests</label>
+                <input type="number" class="fi" id="bEventGuests" min="1" max="50" inputmode="numeric" placeholder="Maximum 50" />
+              </div>
+            </div>
+            <div class="fg" style="margin-bottom:0">
+              <label class="fl" for="bEventNotes">Setup or Special Requests</label>
+              <textarea class="fi" id="bEventNotes" rows="3" maxlength="500" placeholder="Decorations, tables, training setup, or other requests"></textarea>
+            </div>
           </div>
           <div class="wiz-summary">
             <div class="wiz-summary-lbl">Booking Summary</div>
@@ -3683,6 +3754,46 @@ let openPlayMaxPlayers = 40; // default 40, overridden by settings
 let paymentAcceptanceMode = 'both'; // 'both', 'downpayment_only', 'full_payment_only'
 let _serviceFeeRate = 0; // booking fee amount, loaded from settings
 let _serviceFeeType = 'per_hour'; // 'per_hour' or 'flat'
+const EVENT_RATE = 380;
+const EVENT_MIN_HOURS = 4;
+const EVENT_MAX_GUESTS = 50;
+let bookingMode = 'regular';
+const eventPricingTiers = () => [{ from: openHour, to: closeHour, rate: EVENT_RATE }];
+function isEventBooking() { return bookingMode === 'event'; }
+function bookingTiersForCourt(c) { return isEventBooking() ? eventPricingTiers() : getPricingTiersForCourt(c); }
+
+function syncBookingModeUi() {
+  const eventMode = isEventBooking();
+  $('regularModeBtn')?.classList.toggle('active', !eventMode);
+  $('eventModeBtn')?.classList.toggle('active', eventMode);
+  $('regularModeBtn')?.setAttribute('aria-selected', String(!eventMode));
+  $('eventModeBtn')?.setAttribute('aria-selected', String(eventMode));
+  $('eventPackageInfo')?.classList.toggle('show', eventMode);
+  $('eventDetailsFields')?.classList.toggle('show', eventMode);
+  if ($('courtsHeading')) $('courtsHeading').textContent = eventMode ? '🎉 BOOK AN EVENT' : '🏟️ BOOK THE MAIN COURT';
+  if ($('courtsLead')) $('courtsLead').textContent = eventMode
+    ? 'Choose at least four consecutive hours for your private event.'
+    : 'Choose your date and any available court hours, then continue.';
+  if ($('findTimeCopy')) $('findTimeCopy').textContent = eventMode
+    ? 'Find four or more consecutive event hours.'
+    : 'Search the Main Court by date and duration.';
+  if ($('findTimeTitle')) $('findTimeTitle').textContent = eventMode ? 'Find Event Hours' : 'Find Available Time';
+  if ($('findTimeMeta')) $('findTimeMeta').textContent = eventMode
+    ? 'Search for at least four consecutive hours on the Main Court.'
+    : 'Search the Main Court for a consecutive available slot.';
+  payFull = eventMode || paymentAcceptanceMode === 'full_payment_only';
+  if ($('findTimeModal')?.classList.contains('active')) populateFindTimeControls();
+}
+
+async function setBookingMode(mode) {
+  const nextMode = mode === 'event' ? 'event' : 'regular';
+  if (nextMode === bookingMode) return;
+  bookingMode = nextMode;
+  clearCardSelection();
+  syncBookingModeUi();
+  await renderCourts();
+  toast(isEventBooking() ? 'Event package selected: minimum 4 hours at ₱380/hour.' : 'Regular court booking selected.', 'ok');
+}
 const HOST_DOWNPAYMENT_RATE = 0.25;
 let hostInviteTimer = null;
 let hostInviteAutoCloseTimer = null;
@@ -3768,6 +3879,7 @@ function downpaymentLabel() {
   return 'Booking Fee + 50% Court Fee';
 }
 function downpaymentAmount(total, courtFee = null, serviceFee = null) {
+  if (isEventBooking()) return Number(total || 0);
   if (isVerifiedHostBooking() && !hostBookingDepositEligible()) return total;
   if (payFull) return total;
   const fee = Number(serviceFee ?? 0);
@@ -4455,7 +4567,8 @@ function makeBookingItemFromSelection(sel, ref = null, groupRef = null) {
     endTime: fmtT(Math.max(...slots) + 1),
     timeLabel: slotsTimeLabel(slots),
     duration: slots.length,
-    rate: Number(sel.rate || 0),
+    rate: sel.bookingType === 'event' ? EVENT_RATE : Number(sel.rate || 0),
+    bookingType: sel.bookingType || 'regular',
     courtFee,
     serviceFee,
     total: courtFee + serviceFee,
@@ -4488,8 +4601,9 @@ function makeBookingItemFromCurrentForm() {
     courtName: court.name,
     date: $('bDate').value,
     slots: [...selSlots],
-    rate: court.rate,
-    tiers: getPricingTiersForCourt(court),
+    rate: isEventBooking() ? EVENT_RATE : court.rate,
+    tiers: bookingTiersForCourt(court),
+    bookingType: bookingMode,
   };
   return makeBookingItemFromSelection(sel, _reservedRef || null, null);
 }
@@ -4581,6 +4695,7 @@ function bookingItemsSummaryHtml(items = uniqueBookingSelections(activeBookingIt
   const dates = [...new Set(items.map(item => item.date).filter(Boolean))];
   const dateStr = dates.length > 1 ? dates.map(fmtD).join(' + ') : bookingItemsDate(items) ? fmtD(bookingItemsDate(items)) : '-';
   const rows = [
+    ...(isEventBooking() ? ['Package: <strong style="color:var(--lime-ink)">Private Event · Full Payment</strong>'] : []),
     `Court: ${bookingItemsCourtLabel(items)}`,
     `Date: ${dateStr}`,
   ];
@@ -5286,9 +5401,10 @@ function populateFindTimeControls() {
     return `<option value="${h}"${h === preferredStart ? ' selected' : ''}>${fmtT(h)}</option>`;
   }).join('');
 
-  const maxDuration = Math.max(1, Math.min(4, closeHour - openHour));
-  durEl.innerHTML = Array.from({ length: maxDuration }, (_, i) => {
-    const hrs = i + 1;
+  const minDuration = isEventBooking() ? EVENT_MIN_HOURS : 1;
+  const maxDuration = Math.max(minDuration, Math.min(isEventBooking() ? closeHour - openHour : 4, closeHour - openHour));
+  durEl.innerHTML = Array.from({ length: maxDuration - minDuration + 1 }, (_, i) => {
+    const hrs = i + minDuration;
     return `<option value="${hrs}">${hrs} hour${hrs !== 1 ? 's' : ''}</option>`;
   }).join('');
 }
@@ -5354,7 +5470,7 @@ async function findAvailableTimeMatches(date, preferredStart, duration) {
     for (let start = openHour; start + duration <= closeHour; start++) {
       const slots = Array.from({ length: duration }, (_, i) => start + i);
       if (!findTimeSlotsAvailable({ court: c, date, slots, bookedSet, blockedDates })) continue;
-      const tiers = getPricingTiersForCourt(c);
+      const tiers = bookingTiersForCourt(c);
       const courtFee = slots.reduce((sum, h) => sum + getRateForHourFromTiers(h, tiers, c.rate), 0);
       matches.push({
         courtId: String(c.id),
@@ -5399,13 +5515,13 @@ async function searchAvailableTime() {
     resultsEl.innerHTML = '<div class="ft-note">Please choose today or a future date.</div>';
     return;
   }
-  resultsEl.innerHTML = '<div class="ft-note">Searching all courts...</div>';
+  resultsEl.innerHTML = `<div class="ft-note">Searching the Main Court${isEventBooking() ? ' for event hours' : ''}...</div>`;
   try {
     const matches = await findAvailableTimeMatches(date, preferredStart, duration);
     const exact = matches.filter(m => m.exact);
     const nearby = matches.filter(m => !m.exact).slice(0, 8);
     if (!exact.length && !nearby.length) {
-      resultsEl.innerHTML = `<div class="ft-note">No consecutive ${duration} hour slot is available on ${fmtD(date)}. Try another date or shorter duration.</div>`;
+      resultsEl.innerHTML = `<div class="ft-note">No consecutive ${duration} hour slot is available on ${fmtD(date)}. Try another date${isEventBooking() ? ' or event start time' : ' or shorter duration'}.</div>`;
       return;
     }
     resultsEl.innerHTML = [
@@ -5431,8 +5547,9 @@ async function selectFindTimeResult(courtId, date, start, duration) {
     courtName: court?.name || `Court ${courtId}`,
     date,
     slots,
-    rate: Number(court?.rate || 0),
-    tiers: getPricingTiersForCourt(court),
+    rate: isEventBooking() ? EVENT_RATE : Number(court?.rate || 0),
+    tiers: bookingTiersForCourt(court),
+    bookingType: bookingMode,
   };
   refreshCardSelAlias();
   updateCardUI(courtId);
@@ -5472,14 +5589,27 @@ async function toggleCardSlot(courtId, date, h) {
       courtName: court?.name || `Court ${courtId}`,
       date,
       slots: [],
-      rate: Number(court?.rate || 0),
-      tiers: getPricingTiersForCourt(court),
+      rate: isEventBooking() ? EVENT_RATE : Number(court?.rate || 0),
+      tiers: bookingTiersForCourt(court),
+      bookingType: bookingMode,
     };
     cardSelections[key] = sel;
   }
 
   const s = sel.slots;
   const i = s.indexOf(h);
+  if (isEventBooking() && s.length > 0) {
+    const first = Math.min(...s);
+    const last = Math.max(...s);
+    if (i === -1 && h !== first - 1 && h !== last + 1) {
+      toast('Event hours must be consecutive. Select the hour beside your current block.', 'inf');
+      return;
+    }
+    if (i !== -1 && s.length > 1 && h !== first && h !== last) {
+      toast('Remove an hour from the start or end to keep the event consecutive.', 'inf');
+      return;
+    }
+  }
   if (i === -1) {
     s.push(h);
     s.sort((a,b) => a-b);
@@ -5507,6 +5637,7 @@ function updateCardUI(courtId) {
 
   // Show/hide Book Now bar
   const mobileBar   = $('mobileBookBar');
+  const mobileBtn   = $('mobileBookBtn');
   const mobileSumEl = $('mobileBookSum');
   const mobileCtEl  = $('mobileBookCourt');
   if (sel && sel.slots.length > 0) {
@@ -5533,8 +5664,14 @@ function updateCardUI(courtId) {
       if (mobileSumEl) mobileSumEl.textContent = `${hrs} hr${hrs !== 1 ? 's' : ''} · ${fmt(total)}`;
       if (mobileSumEl && selections.length === 1) mobileSumEl.textContent = selectionSummaryText(selections[0]);
       if (mobileCtEl) mobileCtEl.textContent = selections.length === 1 ? selections[0].courtName : `${selections.length} courts selected`;
+      if (mobileBtn) {
+        const eventNeedsHours = isEventBooking() && (selections.length !== 1 || hrs < EVENT_MIN_HOURS || !slotsAreConsecutive(selections[0].slots));
+        mobileBtn.disabled = eventNeedsHours;
+        mobileBtn.textContent = eventNeedsHours ? `${hrs}/${EVENT_MIN_HOURS} event hours` : isEventBooking() ? 'Continue Event →' : 'Book Now →';
+      }
       mobileBar.style.display = 'flex';
     } else {
+      if (mobileBtn) { mobileBtn.disabled = false; mobileBtn.textContent = isEventBooking() ? 'Continue Event →' : 'Book Now →'; }
       mobileBar.style.display = 'none';
     }
   }
@@ -5569,12 +5706,16 @@ function reservationSecondsLeft(startedAt = _reservationStartedAt) {
 
 function guestResumeFormDraft() {
   return {
+    bookingMode,
     step: wizStep || 3,
     name: $('bName')?.value || '',
     phone: $('bPhone')?.value || '',
     email: $('bEmail')?.value || '',
     payMethod: $('bPay')?.value || '',
     gcashRef: $('bGcashRef')?.value || '',
+    eventType: $('bEventType')?.value || '',
+    eventGuests: $('bEventGuests')?.value || '',
+    eventNotes: $('bEventNotes')?.value || '',
     payFull: !!payFull,
     policyAgreed: !!$('bookingPolicyAgree')?.checked,
   };
@@ -5628,6 +5769,7 @@ function bookingItemFromReservedBooking(b) {
     timeLabel: b.timeLabel || slotsTimeLabel(slots),
     duration,
     rate: Number(b.rate || 0),
+    bookingType: b.bookingType || 'regular',
     courtFee: Math.max(0, total - serviceFee),
     serviceFee,
     total,
@@ -5638,6 +5780,9 @@ function restoreGuestResumeDraft(form = {}) {
   if ($('bName')) $('bName').value = form.name || '';
   if ($('bPhone')) $('bPhone').value = form.phone || '';
   if ($('bEmail')) $('bEmail').value = form.email || '';
+  if ($('bEventType')) $('bEventType').value = form.eventType || '';
+  if ($('bEventGuests')) $('bEventGuests').value = form.eventGuests || '';
+  if ($('bEventNotes')) $('bEventNotes').value = form.eventNotes || '';
   if ($('bookingPolicyAgree')) $('bookingPolicyAgree').checked = !!form.policyAgreed;
   if (form.payMethod && paymentMethods[form.payMethod]) pickPay(form.payMethod);
   if ($('bGcashRef')) {
@@ -5656,7 +5801,7 @@ function applyHostBookingDraft() {
 }
 
 function initGuestResumePersistence() {
-  ['bName', 'bPhone', 'bEmail', 'bGcashRef', 'bookingPolicyAgree'].forEach(id => {
+  ['bName', 'bPhone', 'bEmail', 'bGcashRef', 'bEventType', 'bEventGuests', 'bEventNotes', 'bookingPolicyAgree'].forEach(id => {
     const el = $(id);
     if (!el) return;
     ['input', 'change'].forEach(evt => el.addEventListener(evt, () => saveGuestBookingResume()));
@@ -5685,6 +5830,8 @@ async function maybeResumeGuestBooking() {
     return;
   }
 
+  bookingMode = rows.some(b => b.bookingType === 'event') || resume.form?.bookingMode === 'event' ? 'event' : 'regular';
+  syncBookingModeUi();
   bookingItems = rows.map(bookingItemFromReservedBooking);
   _reservedRefs = rows.map(b => b.ref);
   _reservedRef = _reservedRefs[0] || null;
@@ -5698,7 +5845,7 @@ async function maybeResumeGuestBooking() {
       name: primary.courtName,
       rate: primary.rate,
     };
-    if (court) pricingTiers = getPricingTiersForCourt(court);
+    if (court) pricingTiers = bookingTiersForCourt(court);
     selSlots = [...primary.slots];
     if ($('bDate')) $('bDate').value = primary.date;
     sharedCourtDate = normalizedCourtBrowseDate(primary.date);
@@ -5936,6 +6083,14 @@ async function proceedToBook(courtId = null) {
     return;
   }
 
+  if (isEventBooking()) {
+    const eventSelection = selections[0];
+    if (selections.length !== 1 || eventSelection.slots.length < EVENT_MIN_HOURS || !slotsAreConsecutive(eventSelection.slots)) {
+      toast(`Event bookings require at least ${EVENT_MIN_HOURS} consecutive hours on the Main Court.`, 'err');
+      return;
+    }
+  }
+
   const unavailable = selections.find(sel =>
     sel.slots.some(h => isOpenPlayHour(sel.date, h, sel.courtId) || isMaintenanceHour(sel.date, h, sel.courtId)) ||
     !!getCourtRepair(sel.courtName, sel.date)
@@ -5947,7 +6102,7 @@ async function proceedToBook(courtId = null) {
   }
 
   let bookingSelections = uniqueBookingSelections(selections);
-  const extensionCandidate = await lateNightExtensionCandidate(selections);
+  const extensionCandidate = isEventBooking() ? null : await lateNightExtensionCandidate(selections);
   if (extensionCandidate) {
     const addExtension = await showLateNightExtensionPrompt(extensionCandidate);
     if (addExtension) bookingSelections = uniqueBookingSelections([...bookingSelections, ...extensionCandidate.selections]);
@@ -5963,7 +6118,7 @@ async function proceedToBook(courtId = null) {
     rate: primary.rate,
     rateSchedule: primary.tiers,
   };
-  if (court) pricingTiers = getPricingTiersForCourt(court);
+  if (court) pricingTiers = bookingTiersForCourt(court);
 
   const groupRef = bookingSelections.length > 1 ? genRef() + '-G' : null;
   const reserveStartedAt = new Date().toISOString();
@@ -5988,6 +6143,7 @@ async function proceedToBook(courtId = null) {
         timeLabel:     item.timeLabel || itemTimeLabel(item),
         duration:      item.duration,
         rate:          item.rate,
+        bookingType:   item.bookingType || bookingMode,
         total:         item.total,
         paymentMethod: 'gcash',
         paymentFlow:   null,
@@ -6021,6 +6177,7 @@ async function proceedToBook(courtId = null) {
   await refreshBookingItemViews(reserveItems);
   $('bDate').value = selectedDate;
   applyHostBookingDraft();
+  if (isEventBooking()) payFull = true;
   updatePaymentAmountUI();
   wizStartStep = 3;
   $('bookModal').classList.add('active');
@@ -6250,7 +6407,7 @@ async function onCardDate(courtId, date, options = {}) {
     grid.innerHTML = `<span class="cc-slots-empty">🔧 Under maintenance</span>`;
     return;
   }
-  const cTiers = getPricingTiersForCourt(c);
+  const cTiers = bookingTiersForCourt(c);
 
   if (blockedDates.includes(date)) {
     grid.innerHTML = `<span class="cc-slots-empty" style="grid-column:span 2">🔒 This date is blocked</span>`;
@@ -6322,7 +6479,7 @@ async function ensureCourt(courtId) {
   if (court && court.id === courtId) return;
   const courts = await DB.getCourts();
   court = courts.find(c => c.id === courtId) || null;
-  if (court) pricingTiers = getPricingTiersForCourt(court);
+  if (court) pricingTiers = bookingTiersForCourt(court);
 }
 
 /* =============================================
@@ -6376,11 +6533,12 @@ async function renderCourts() {
     const availBadgeTxt = availBadge.text;
 
     // Use this court's own rate schedule, fall back to global tiers, then flat rate
-    const _cTiers = getPricingTiersForCourt(c);
+    const _cTiers = bookingTiersForCourt(c);
     const _cRate = h => getRateForHourFromTiers(h, _cTiers, c.rate);
     const cardSelection = getCardSelection(c.id);
 
     const rateRange = (() => {
+      if (isEventBooking()) return `₱${EVENT_RATE}/hr · 4-hour minimum`;
       const r = _cTiers.map(t => t.rate);
       return r.length ? (Math.min(...r) === Math.max(...r) ? `₱${Math.min(...r)}/hr` : `₱${Math.min(...r)}–₱${Math.max(...r)}/hr`) : `${fmt(c.rate)}/hr`;
     })();
@@ -6537,7 +6695,7 @@ async function selectCourt(id) {
   court = courts.find(c => c.id === id);
   if (!court) return;
   selSlots = [];
-  pricingTiers = getPricingTiersForCourt(court);
+  pricingTiers = bookingTiersForCourt(court);
   document.querySelectorAll('.cc').forEach(el => el.classList.toggle('sel', el.dataset.id === id));
   const d = $('courtDisp');
   const rates = pricingTiers.map(t => t.rate);
@@ -7063,6 +7221,7 @@ function updateRefCount() {
 function updatePaymentAmountUI() {
   const hostBooking = isVerifiedHostBooking();
   const hostDeposit = hostBooking && hostBookingDepositEligible();
+  const eventBooking = isEventBooking();
   const dpOnly = paymentAcceptanceMode === 'downpayment_only';
   const fpOnly = paymentAcceptanceMode === 'full_payment_only';
 
@@ -7074,22 +7233,21 @@ function updatePaymentAmountUI() {
     const btn50 = $(p + 'Pat50');
     const btn100 = $(p + 'Pat100');
     const dpLabel = btn50?.querySelector('div:first-child');
-    if (dpLabel) dpLabel.textContent = hostBooking ? (hostDeposit ? 'Fee + 25% Court' : 'Full Payment') : 'Fee + 50% Court';
+    if (dpLabel) dpLabel.textContent = eventBooking ? 'Full Payment' : hostBooking ? (hostDeposit ? 'Fee + 25% Court' : 'Full Payment') : 'Fee + 50% Court';
 
-    if (hostBooking || dpOnly) {
+    if (eventBooking || fpOnly) {
+      if (label) label.style.display = 'none';
+      if (toggle) toggle.style.display = 'none';
+      if (btn50) btn50.classList.remove('on');
+      if (btn100) btn100.classList.add('on');
+      payFull = true;
+    } else if (hostBooking || dpOnly) {
       // Only downpayment — hide toggle and label, auto-select 50%
       if (label) label.style.display = 'none';
       if (toggle) toggle.style.display = 'none';
       if (btn50) btn50.classList.toggle('on', hostBooking ? hostDeposit : true);
       if (btn100) btn100.classList.toggle('on', hostBooking ? !hostDeposit : false);
       payFull = hostBooking ? !hostDeposit : false;
-    } else if (fpOnly) {
-      // Only full payment — hide toggle and label, auto-select 100%
-      if (label) label.style.display = 'none';
-      if (toggle) toggle.style.display = 'none';
-      if (btn50) btn50.classList.remove('on');
-      if (btn100) btn100.classList.add('on');
-      payFull = true;
     } else {
       // Both options — show toggle and label
       if (label) label.style.display = '';
@@ -7100,7 +7258,9 @@ function updatePaymentAmountUI() {
   });
   const policy = $('bookingPolicyText');
   if (policy) {
-    policy.innerHTML = hostBooking
+    policy.innerHTML = eventBooking
+      ? '<strong>I agree</strong> that event bookings require full payment, include setup and cleanup within the reserved hours, and are subject to the venue’s final event rules.'
+      : hostBooking
       ? hostDeposit
         ? '<strong>I agree</strong> that all payments are final and non-refundable. The remaining balance is due five full days before Open Play; missing the deadline forfeits the reservation and releases the slot.'
         : '<strong>I agree</strong> that full payment is required because this Open Play starts in five days or less, and all payments are final and non-refundable.'
@@ -7110,7 +7270,8 @@ function updatePaymentAmountUI() {
 }
 
 function setPayAmount(mode) {
-  if (isVerifiedHostBooking()) mode = hostBookingDepositEligible() ? 'half' : 'full';
+  if (isEventBooking()) mode = 'full';
+  if (!isEventBooking() && isVerifiedHostBooking()) mode = hostBookingDepositEligible() ? 'half' : 'full';
   payFull = (mode === 'full');
   ['gc','gt','pn'].forEach(p => {
     const btn50  = $(p + 'Pat50');
@@ -7403,17 +7564,23 @@ async function submitBooking(e) {
   const hasPaymentMethod = ALL_PAYMENT_METHODS.some(m => paymentMethods[m]);
   const digitalPay = isDigitalPayMethod(payMethod);
   const repairItem = items.find(item => getCourtRepair(item.courtName, item.date));
+  const eventGuests = parseInt($('bEventGuests')?.value || '0', 10);
+  const eventType = $('bEventType')?.value || '';
+  const eventSlotsValid = items.length === 1 && items[0].slots?.length >= EVENT_MIN_HOURS && slotsAreConsecutive(items[0].slots);
 
   const checks = [
     [items.length === 0, 'Please select at least one time slot.', 'slotsGrid', 2],
     [!bookingDate, 'Please select a date.', 'bDate', 2],
     [items.some(item => !item.slots?.length), 'Please select at least one time slot.', 'slotsGrid', 2],
+    [isEventBooking() && !eventSlotsValid, `Event bookings require at least ${EVENT_MIN_HOURS} consecutive hours.`, 'slotsGrid', 2],
     [!$('bName').value.trim(), 'Please enter your full name.', 'bName', 3],
     [$('bName').value.trim().length < 3, 'Name must be at least 3 characters.', 'bName', 3],
     [!$('bPhone').value.trim(), 'Please enter your contact number.', 'bPhone', 3],
     [!/^(09|\+639)\d{9}$/.test($('bPhone').value.replace(/\s|-/g,'')), 'Enter a valid PH number (e.g. 09XX XXX XXXX).', 'bPhone', 3],
     [!$('bEmail').value.trim(), 'Please enter your email.', 'bEmail', 3],
     [!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test($('bEmail').value), 'Please enter a valid email address.', 'bEmail', 3],
+    [isEventBooking() && !eventType, 'Please select the type of event.', 'bEventType', 3],
+    [isEventBooking() && (!Number.isInteger(eventGuests) || eventGuests < 1 || eventGuests > EVENT_MAX_GUESTS), `Enter an estimated guest count from 1 to ${EVENT_MAX_GUESTS}.`, 'bEventGuests', 3],
     [!hasPaymentMethod, 'No payment method is enabled right now. Please contact admin.', 'payMethodBlock', 4],
     [!payMethod, 'Please select a payment method.', 'payMethodBlock', 4],
     [!!payMethod && !paymentMethods[payMethod], 'Selected payment method is no longer available.', 'payMethodBlock', 4],
@@ -7466,6 +7633,10 @@ async function submitBooking(e) {
     timeLabel: item.timeLabel || itemTimeLabel(item),
     duration: item.duration,
     rate: item.rate,
+    bookingType: isEventBooking() ? 'event' : 'regular',
+    eventType: isEventBooking() ? eventType : null,
+    eventGuestCount: isEventBooking() ? eventGuests : null,
+    eventSetupNotes: isEventBooking() ? ($('bEventNotes')?.value || '').trim() : null,
     total: item.total,
     paymentMethod: payMethod,
     gcashRef: gcashRef || null,
@@ -7504,6 +7675,10 @@ async function submitBooking(e) {
           paymentFlow:   row.paymentFlow,
           gcashRef:      row.gcashRef,
           downpayment:   row.downpayment,
+          bookingType:   row.bookingType,
+          eventType:     row.eventType,
+          eventGuestCount: row.eventGuestCount,
+          eventSetupNotes: row.eventSetupNotes,
           hostBooking:   row.hostBooking,
           hostUserId:    row.hostUserId,
           hostName:      row.hostName,
@@ -7721,6 +7896,7 @@ function showInvoice(b) {
   const receiptStatus = b._receiptResult?.status || b.receiptStatus || '';
   const isRejected = b.status === 'cancelled' || b.paymentStatus === 'rejected' || receiptStatus === 'rejected';
   const isDigitalPay = isDigitalPayMethod(b.paymentMethod);
+  const eventBooking = b.bookingType === 'event';
   const isFullPay = b.downpayment >= b.total;
   const hostDeadline = b.hostBooking && !isFullPay
     ? (b.balanceDueAt ? new Date(b.balanceDueAt) : window.BookingBalance?.balanceDeadline?.(b))
@@ -7734,8 +7910,8 @@ function showInvoice(b) {
   if (heroEl) heroEl.classList.remove('inv-hero--rejected','inv-hero--approved');
   if (heroEl && isRejected) heroEl.classList.add('inv-hero--rejected');
 
-  set('iTitle', isRejected ? 'Receipt Rejected' : isConfirmed ? 'Booking Confirmed!' : 'Booking Received!');
-  set('iHeroSub', isRejected ? 'Your receipt could not be verified. Please make a new booking.' : isConfirmed ? 'Your court is confirmed. See you on the court!' : isDigitalPay ? 'Payment received for review. We will confirm after verification.' : 'Your request is received. Staff will confirm after payment.');
+  set('iTitle', isRejected ? 'Receipt Rejected' : isConfirmed ? (eventBooking ? 'Event Confirmed!' : 'Booking Confirmed!') : (eventBooking ? 'Event Booking Received!' : 'Booking Received!'));
+  set('iHeroSub', isRejected ? 'Your receipt could not be verified. Please make a new booking.' : isConfirmed ? (eventBooking ? 'Your fully paid event reservation is confirmed.' : 'Your court is confirmed. See you on the court!') : isDigitalPay ? 'Full payment received for review. We will confirm after verification.' : 'Your request is received. Staff will confirm after payment.');
   const statusEl = $('iStatus');
   if (statusEl) {
     statusEl.textContent = isRejected ? 'Receipt Rejected' : isConfirmed ? 'Confirmed' : isDigitalPay ? 'Pending Verification' : 'Pending Confirmation';
@@ -7748,10 +7924,10 @@ function showInvoice(b) {
   set('iName', b.fullName);
   set('iContact', b.contactNumber);
   set('iEmail', b.email);
-  set('iCourt', b.courtName);
+  set('iCourt', eventBooking ? `${b.courtName} · Event Package` : b.courtName);
   set('iDate', fmtD(b.date));
   set('iTime', b.timeLabel || `${b.startTime} – ${b.endTime}`);
-  set('iDur', `${b.duration} hr${b.duration !== 1 ? 's' : ''}`);
+  set('iDur', `${b.duration} hr${b.duration !== 1 ? 's' : ''}${eventBooking && b.eventGuestCount ? ` · ${b.eventGuestCount} guests` : ''}`);
   set('iPay', payLabel);
 
   if (b.gcashRef) {
@@ -8919,7 +9095,7 @@ async function submitOpenPlay() {
 }
 </script>
 <script src="supabase.min.js"></script>
-<script src="supabase-config.js?v=20260718-backyard-main-court-v2"></script>
+<script src="supabase-config.js?v=20260718-backyard-events-v3"></script>
 
 <!-- MOBILE STICKY BOOK NOW BAR -->
 <div id="mobileBookBar" class="mobile-book-bar" style="display:none">
@@ -8927,7 +9103,7 @@ async function submitOpenPlay() {
     <span class="mbbar-court" id="mobileBookCourt"></span>
     <span class="mbbar-sum" id="mobileBookSum"></span>
   </div>
-  <button class="btn btn-p btn-sm" onclick="proceedToBook()">Book Now →</button>
+  <button class="btn btn-p btn-sm" id="mobileBookBtn" onclick="proceedToBook()">Book Now →</button>
 </div>
 <nav id="hostBottomNav" class="host-bottom-nav" aria-label="Host navigation">
   <button type="button" class="host-nav-btn active" onclick="hostNavBook()">

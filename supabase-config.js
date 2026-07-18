@@ -424,6 +424,10 @@ function rowToBooking(r) {
     paidAt:        r.paid_at || null,
     gcashRef:      r.gcash_ref || null,
     downpayment:   r.downpayment || null,
+    bookingType:   r.booking_type || 'regular',
+    eventType:     r.event_type || null,
+    eventGuestCount: r.event_guest_count != null ? Number(r.event_guest_count) : null,
+    eventSetupNotes: r.event_setup_notes || null,
     balanceDueAt:  r.balance_due_at || null,
     forfeitedAt:   r.forfeited_at || null,
     forfeitureReason: r.forfeiture_reason || null,
@@ -534,6 +538,10 @@ function bookingToRow(b) {
     paid_at:        b.paidAt || null,
     gcash_ref:      b.gcashRef || null,
     downpayment:    b.downpayment || null,
+    booking_type:   b.bookingType || 'regular',
+    event_type:     b.eventType || null,
+    event_guest_count: b.eventGuestCount || null,
+    event_setup_notes: b.eventSetupNotes || null,
     host_booking:   !!b.hostBooking,
     host_user_id:   b.hostUserId || null,
     host_name:      b.hostName || null,
@@ -856,6 +864,10 @@ window.DB = {
     if (updates.paidAt !== undefined) row.paid_at = updates.paidAt;
     if (updates.gcashRef !== undefined) row.gcash_ref = updates.gcashRef;
     if (updates.downpayment !== undefined) row.downpayment = updates.downpayment;
+    if (updates.bookingType !== undefined) row.booking_type = updates.bookingType;
+    if (updates.eventType !== undefined) row.event_type = updates.eventType;
+    if (updates.eventGuestCount !== undefined) row.event_guest_count = updates.eventGuestCount;
+    if (updates.eventSetupNotes !== undefined) row.event_setup_notes = updates.eventSetupNotes;
     if (updates.balanceDueAt !== undefined) row.balance_due_at = updates.balanceDueAt;
     if (updates.forfeitedAt !== undefined) row.forfeited_at = updates.forfeitedAt;
     if (updates.forfeitureReason !== undefined) row.forfeiture_reason = updates.forfeitureReason;
