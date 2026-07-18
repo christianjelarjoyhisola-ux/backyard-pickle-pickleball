@@ -458,6 +458,30 @@ h1, h2, h3, h4 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; }
 .integration-badge.ok { background:var(--green-bg); color:var(--green); }
 .integration-badge.warn { background:var(--yellow-bg); color:var(--yellow); }
 .integration-meta { font-size:.74rem; color:var(--muted); line-height:1.45; overflow-wrap:anywhere; }
+.platform-qr-upload {
+  display:grid; grid-template-columns:88px minmax(0,1fr); gap:14px;
+  align-items:center; padding:12px; background:var(--surface);
+  border:1px dashed var(--border); border-radius:11px;
+}
+.platform-qr-preview {
+  width:88px; aspect-ratio:1; display:grid; place-items:center; overflow:hidden;
+  border:1px solid var(--border); border-radius:10px; background:var(--input);
+  color:var(--text3); font-weight:900; font-size:.72rem; letter-spacing:.8px;
+}
+.platform-qr-preview img { width:100%; height:100%; object-fit:contain; background:#fff; }
+.platform-qr-copy { min-width:0; }
+.platform-qr-title { font-size:.76rem; font-weight:900; color:var(--text); text-transform:uppercase; letter-spacing:.45px; }
+.platform-qr-title span { color:var(--text3); font-weight:700; }
+.platform-qr-help { margin:3px 0 9px; color:var(--muted); font-size:.71rem; line-height:1.4; }
+.platform-qr-actions { display:flex; flex-wrap:wrap; gap:7px; }
+.platform-qr-status { margin-top:7px; color:var(--text3); font-size:.69rem; min-height:1em; }
+.platform-qr-status.ok { color:var(--green); }
+.platform-qr-status.err { color:var(--red); }
+.platform-qr-file { position:absolute; width:1px; height:1px; overflow:hidden; opacity:0; pointer-events:none; }
+@media (max-width:520px) {
+  .platform-qr-upload { grid-template-columns:72px minmax(0,1fr); gap:10px; padding:10px; }
+  .platform-qr-preview { width:72px; }
+}
 .pay-row { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 5px; }
 .bar { height: 6px; background: var(--bg2); border-radius: 3px; overflow: hidden; margin-bottom: 14px; }
 .bar-fill { height: 100%; border-radius: 3px; transition: width .6s; }
@@ -7627,6 +7651,7 @@ function renderPlatformPaymentMethods(methods) {
   body.innerHTML = methods.map(method => {
     const code = esc(String(method.code || ''));
     const name = esc(String(method.displayName || method.code || 'Payment method'));
+    const qrImageUrl = esc(String(method.qrImageUrl || ''));
     return `<details class="platform-payment-method" data-code="${code}" data-display-name="${name}" ${method.isActive ? 'open' : ''} style="background:var(--input);border:1px solid var(--border);border-radius:11px;padding:0 13px">
       <summary style="display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none;padding:13px 0">
         <strong style="font-size:.87rem">${name}</strong>
@@ -7637,11 +7662,119 @@ function renderPlatformPaymentMethods(methods) {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;padding:0 0 13px">
         <div class="fg" style="margin:0"><label class="fl">Account Name</label><input class="fi platform-method-account-name" maxlength="120" value="${esc(method.accountName || '')}" placeholder="Exact receiving account name" /></div>
         <div class="fg" style="margin:0"><label class="fl">Account Number / Reference</label><input class="fi platform-method-account-reference" maxlength="120" value="${esc(method.accountReference || '')}" placeholder="Mobile or account number" /></div>
-        <div class="fg" style="margin:0;grid-column:1/-1"><label class="fl">QR Image HTTPS URL (optional)</label><input class="fi platform-method-qr-url" type="url" maxlength="500" value="${esc(method.qrImageUrl || '')}" placeholder="https://..." /><div style="font-size:.7rem;color:var(--muted);margin-top:4px">Use a secure hosted image URL. Browser-only base64 images are not saved.</div></div>
+        <div class="fg" style="margin:0;grid-column:1/-1">
+          <div class="platform-qr-upload">
+            <div class="platform-qr-preview">${qrImageUrl ? `<img src="${qrImageUrl}" alt="${name} payment QR preview" />` : '<span>NO QR</span>'}</div>
+            <div class="platform-qr-copy">
+              <div class="platform-qr-title">Payment QR Image <span>(optional)</span></div>
+              <p class="platform-qr-help">Upload a clear JPEG, PNG, or WebP image. Maximum file size: 2 MB.</p>
+              <div class="platform-qr-actions">
+                <button class="btn btn-g btn-sm platform-qr-upload-btn" type="button" onclick="choosePlatformPaymentQr(this)">${qrImageUrl ? 'Replace Image' : 'Upload Image'}</button>
+                <button class="btn btn-sm platform-qr-remove-btn" type="button" onclick="removePlatformPaymentQr(this)" ${qrImageUrl ? '' : 'hidden'}>Remove</button>
+              </div>
+              <div class="platform-qr-status ${qrImageUrl ? 'ok' : ''}" role="status" aria-live="polite">${qrImageUrl ? 'QR image is ready.' : 'No QR image uploaded.'}</div>
+              <input class="platform-method-qr-url" type="hidden" value="${qrImageUrl}" />
+              <input class="platform-qr-file" type="file" accept="image/jpeg,image/png,image/webp" onchange="uploadPlatformPaymentQr(this)" />
+            </div>
+          </div>
+        </div>
         <div class="fg" style="margin:0;grid-column:1/-1"><label class="fl">Payment Instructions</label><textarea class="fi platform-method-instructions" maxlength="1000" rows="2" style="resize:vertical" placeholder="Reference format or payment reminder">${esc(method.instructions || '')}</textarea></div>
       </div>
     </details>`;
   }).join('');
+}
+
+function platformQrElements(source) {
+  const upload = source?.closest('.platform-qr-upload');
+  return {
+    upload,
+    row: source?.closest('.platform-payment-method'),
+    file: upload?.querySelector('.platform-qr-file'),
+    url: upload?.querySelector('.platform-method-qr-url'),
+    preview: upload?.querySelector('.platform-qr-preview'),
+    uploadButton: upload?.querySelector('.platform-qr-upload-btn'),
+    removeButton: upload?.querySelector('.platform-qr-remove-btn'),
+    status: upload?.querySelector('.platform-qr-status'),
+  };
+}
+
+function setPlatformQrStatus(elements, message, kind = '') {
+  if (!elements.status) return;
+  elements.status.textContent = message;
+  elements.status.className = `platform-qr-status ${kind}`.trim();
+}
+
+function setPlatformQrPreview(elements, imageUrl, displayName) {
+  if (!elements.preview || !elements.url) return;
+  elements.url.value = imageUrl || '';
+  elements.preview.replaceChildren();
+  if (imageUrl) {
+    const image = document.createElement('img');
+    image.src = imageUrl;
+    image.alt = `${displayName || 'Payment'} QR preview`;
+    elements.preview.appendChild(image);
+  } else {
+    const empty = document.createElement('span');
+    empty.textContent = 'NO QR';
+    elements.preview.appendChild(empty);
+  }
+  if (elements.uploadButton) elements.uploadButton.textContent = imageUrl ? 'Replace Image' : 'Upload Image';
+  if (elements.removeButton) elements.removeButton.hidden = !imageUrl;
+}
+
+function choosePlatformPaymentQr(button) {
+  platformQrElements(button).file?.click();
+}
+
+async function uploadPlatformPaymentQr(input) {
+  const elements = platformQrElements(input);
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file || !elements.row) return;
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(String(file.type || '').toLowerCase())) {
+    setPlatformQrStatus(elements, 'Choose a JPEG, PNG, or WebP image.', 'err');
+    return;
+  }
+  if (file.size <= 0 || file.size > 2 * 1024 * 1024) {
+    setPlatformQrStatus(elements, 'The image must be smaller than 2 MB.', 'err');
+    return;
+  }
+  const methodCode = elements.row.dataset.code || '';
+  const displayName = elements.row.dataset.displayName || 'Payment';
+  const retry = () => uploadPlatformPaymentQrFile(elements, file, methodCode, displayName);
+  if (!(await ensureReceiptMfa(retry))) return;
+  await retry();
+}
+
+async function uploadPlatformPaymentQrFile(elements, file, methodCode, displayName) {
+  const button = elements.uploadButton;
+  if (button) { button.disabled = true; button.textContent = 'Uploading...'; }
+  if (elements.removeButton) elements.removeButton.disabled = true;
+  setPlatformQrStatus(elements, 'Uploading securely...');
+  try {
+    const asset = await DB.uploadTenantPaymentQr({ methodCode, file });
+    if (!asset?.url) throw new Error('The upload did not return an image URL.');
+    setPlatformQrPreview(elements, asset.url, displayName);
+    setPlatformQrStatus(elements, 'Uploaded. Click Save Activation Settings to publish it.', 'ok');
+    toast(`${displayName} QR image uploaded.`);
+  } catch (error) {
+    console.error('uploadPlatformPaymentQr:', error);
+    setPlatformQrStatus(elements, error?.message || 'Could not upload the QR image.', 'err');
+    toast(error?.message || 'Could not upload the QR image.', 'err');
+  } finally {
+    if (button) button.disabled = false;
+    if (elements.removeButton) elements.removeButton.disabled = false;
+    if (button) button.textContent = elements.url?.value ? 'Replace Image' : 'Upload Image';
+  }
+}
+
+async function removePlatformPaymentQr(button) {
+  const elements = platformQrElements(button);
+  if (!elements.row || !elements.url?.value) return;
+  const displayName = elements.row.dataset.displayName || 'Payment';
+  if (!confirm(`Remove the ${displayName} QR image?`)) return;
+  setPlatformQrPreview(elements, '', displayName);
+  setPlatformQrStatus(elements, 'Removed. Click Save Activation Settings to publish the change.', 'ok');
 }
 
 function platformActivationReadinessChecks(activation) {

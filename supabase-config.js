@@ -2137,6 +2137,37 @@ window.DB = {
     return _pbNormalizeTenantActivationSettings(result.settings);
   },
 
+  async uploadTenantPaymentQr({ methodCode, file }) {
+    if (!PB_PLATFORM_V1) throw new Error('Payment QR uploads require the platform backend.');
+    await window.Auth.requireAal2();
+    const code = String(methodCode || '').trim().toLowerCase();
+    if (!/^[a-z][a-z0-9_-]{1,39}$/.test(code)) throw new Error('The payment method is invalid.');
+    if (!file) throw new Error('Choose a QR image to upload.');
+    const form = new FormData();
+    form.append('qrFile', file, file.name || `${code}-qr.jpg`);
+    const response = await _pbFetchWithTimeout(
+      `${SUPABASE_URL.replace(/\/+$/, '')}/functions/v1/tenant-payment-asset?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      {
+        method: 'POST',
+        headers: await _authRestHeaders({
+          'X-Payment-Method': code,
+          'X-Asset-Action': 'upload',
+        }),
+        body: form,
+      },
+      PB_RECEIPT_TIMEOUT_MS
+    );
+    const text = await response.text();
+    const result = _safeJsonParse(text) || {};
+    if (!response.ok) {
+      const failure = new Error(_pbApiErrorMessage(result, text, `Upload failed (HTTP ${response.status}).`));
+      failure.code = result?.error?.code || null;
+      throw failure;
+    }
+    if (!result?.ok || !result?.asset?.url) throw new Error('The QR upload returned an invalid response.');
+    return result.asset;
+  },
+
   async saveTenantPlatformBilling({ feeMode, feeAmount }) {
     const mode = String(feeMode || '');
     const amount = Number(feeAmount);
