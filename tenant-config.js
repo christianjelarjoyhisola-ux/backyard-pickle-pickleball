@@ -16,6 +16,8 @@
     ]),
     supabaseUrl: 'https://neqvrwtofiolcuxewdze.supabase.co',
     supabasePublishableKey: 'sb_publishable_UHMKYGsygjeMl79VRfPNVw_RyWiV5Yr',
+    schemaVersion: 'multi-tenant-v1',
+    turnstileSiteKey: '0x4AAAAAAD4f_jPZuqET5eVD',
     // Authentication is activated independently from public booking writes.
     // This lets approved staff use real Supabase Auth while the remaining
     // booking/payment rollout stays explicitly disabled.

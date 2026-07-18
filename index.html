@@ -21,6 +21,7 @@
 <meta name="twitter:image:alt" content="Backyard Pickle venue sign" />
 <link rel="icon" type="image/jpeg" href="backyardpicklelogo.jpg">
 <script src="booking-balance.js?v=20260716-host-balance-v1"></script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1871576789265012" crossorigin="anonymous"></script>
 <style>
@@ -3284,6 +3285,10 @@ body.host-mode .courts { padding-bottom:140px; }
             <div class="wiz-summary-lbl">Booking Summary</div>
             <div id="wiz3Summary" style="font-size:.84rem;line-height:1.55"></div>
           </div>
+          <div id="bookingSecurityCheck" style="display:none;margin-top:12px;color:var(--muted);font-size:.72rem;line-height:1.4">
+            <div id="bookingTurnstile"></div>
+            <span>Protected by Cloudflare Turnstile. Verification runs when you continue.</span>
+          </div>
         </div>
 
         <!-- ── STEP 5: PAYMENT ── -->
@@ -3746,8 +3751,159 @@ const EVENT_RATE = 380;
 const EVENT_MIN_HOURS = 4;
 const EVENT_MAX_GUESTS = 50;
 let bookingMode = 'regular';
+let _platformBookingAccess = null;
+let _platformClientRequestId = null;
+let _platformClientRequestFingerprint = null;
+let _platformStatusPoll = null;
+const PLATFORM_ACCESS_KEY = 'pb_platform_booking_access';
+const PLATFORM_PENDING_DRAFT_KEY = 'pb_platform_pending_draft_v1';
+const PLATFORM_REQUEST_KEY = 'pb_platform_booking_request_v1';
+const PLATFORM_LAST_ACCESS_KEY = 'pb_last_booking_access';
+let _bookingTurnstileWidgetId = null;
+let _bookingTurnstileToken = '';
+let _bookingTurnstileResolve = null;
+let _bookingTurnstileReject = null;
 const eventPricingTiers = () => [{ from: openHour, to: closeHour, rate: EVENT_RATE }];
 function isEventBooking() { return bookingMode === 'event'; }
+
+function platformCanonicalDraft(draft = {}) {
+  const slots = [...new Set((draft.slots || []).map(Number).filter(Number.isInteger))].sort((a, b) => a - b);
+  return JSON.stringify({
+    tenant: String(window.PB_TENANT_SLUG || '').trim().toLowerCase(),
+    courtId: String(draft.courtId || '').trim().toLowerCase(),
+    date: String(draft.date || '').trim(),
+    slots,
+    bookingType: draft.bookingType === 'event' ? 'event' : 'regular',
+    name: String(draft.fullName || '').trim().replace(/\s+/g, ' ').toLowerCase(),
+    email: String(draft.email || '').trim().toLowerCase(),
+    phone: String(draft.contactNumber || '').replace(/[^0-9+]/g, ''),
+    eventType: String(draft.eventType || '').trim().toLowerCase(),
+    eventGuests: Number(draft.eventGuestCount || 1),
+    eventNotes: String(draft.eventSetupNotes || '').trim().replace(/\s+/g, ' '),
+  });
+}
+
+async function platformDraftFingerprint(draft) {
+  if (!window.crypto?.subtle || typeof TextEncoder !== 'function') {
+    throw new Error('This browser cannot securely prepare an idempotent booking request. Please update it and try again.');
+  }
+  const bytes = new TextEncoder().encode(platformCanonicalDraft(draft));
+  const digest = await window.crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('');
+}
+
+function readPlatformJson(storage, key) {
+  try { return JSON.parse(storage.getItem(key) || 'null'); } catch (_) { return null; }
+}
+
+function validPlatformRequestRecord(record, fingerprint) {
+  const age = Date.now() - new Date(record?.createdAt || '').getTime();
+  return record?.fingerprint === fingerprint &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(record?.clientRequestId || '')) &&
+    Number.isFinite(age) && age >= 0 && age < 24 * 60 * 60 * 1000;
+}
+
+async function platformRequestIdentity(draft) {
+  const fingerprint = await platformDraftFingerprint(draft);
+  const saved = readPlatformJson(localStorage, PLATFORM_REQUEST_KEY);
+  const clientRequestId = validPlatformRequestRecord(saved, fingerprint)
+    ? saved.clientRequestId
+    : window.crypto.randomUUID();
+  const record = { fingerprint, clientRequestId, createdAt: validPlatformRequestRecord(saved, fingerprint) ? saved.createdAt : new Date().toISOString() };
+  // Persist before the network request so a committed response that is lost can
+  // be retried with the same server idempotency key after reload.
+  localStorage.setItem(PLATFORM_REQUEST_KEY, JSON.stringify(record));
+  _platformClientRequestId = clientRequestId;
+  _platformClientRequestFingerprint = fingerprint;
+  return record;
+}
+
+function clearPlatformRequestState({ clearAccess = true } = {}) {
+  _platformClientRequestId = null;
+  _platformClientRequestFingerprint = null;
+  try { localStorage.removeItem(PLATFORM_REQUEST_KEY); } catch (_) {}
+  try { sessionStorage.removeItem(PLATFORM_PENDING_DRAFT_KEY); } catch (_) {}
+  if (clearAccess) {
+    _platformBookingAccess = null;
+    try { sessionStorage.removeItem(PLATFORM_ACCESS_KEY); } catch (_) {}
+  }
+}
+
+function bookingTurnstileCallback(token) {
+  _bookingTurnstileToken = String(token || '');
+  const resolve = _bookingTurnstileResolve;
+  if (resolve) resolve(_bookingTurnstileToken);
+}
+
+function bookingTurnstileExpired() {
+  _bookingTurnstileToken = '';
+  const reject = _bookingTurnstileReject;
+  if (reject) reject(new Error('Security verification expired. Please try again.'));
+}
+
+function bookingTurnstileError() {
+  _bookingTurnstileToken = '';
+  const reject = _bookingTurnstileReject;
+  if (reject) reject(new Error('Security verification could not start. Please try again.'));
+}
+
+async function waitForTurnstile(timeoutMs = 10000) {
+  const started = Date.now();
+  while (!window.turnstile) {
+    if (Date.now() - started >= timeoutMs) throw new Error('Security verification did not load. Check your connection and try again.');
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return window.turnstile;
+}
+
+async function getBookingTurnstileToken() {
+  if (!window.PB_PLATFORM_V1) return '';
+  const sitekey = String(window.PB_TENANT_CONFIG?.turnstileSiteKey || '').trim();
+  if (!sitekey) throw new Error('Online booking security is not configured yet.');
+  const turnstile = await waitForTurnstile();
+  if (_bookingTurnstileWidgetId === null) {
+    _bookingTurnstileWidgetId = turnstile.render('#bookingTurnstile', {
+      sitekey,
+      action: 'booking_create',
+      size: 'invisible',
+      execution: 'execute',
+      callback: bookingTurnstileCallback,
+      'expired-callback': bookingTurnstileExpired,
+      'error-callback': bookingTurnstileError,
+    });
+  }
+  if (_bookingTurnstileToken) return _bookingTurnstileToken;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (handler, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (_bookingTurnstileResolve === finishResolve || _bookingTurnstileReject === finishReject) {
+        _bookingTurnstileResolve = null;
+        _bookingTurnstileReject = null;
+      }
+      handler(value);
+    };
+    const finishResolve = token => finish(resolve, token);
+    const finishReject = error => finish(reject, error);
+    const timer = setTimeout(
+      () => finishReject(new Error('Security verification timed out. Please try again.')),
+      15000
+    );
+    _bookingTurnstileResolve = finishResolve;
+    _bookingTurnstileReject = finishReject;
+    try { turnstile.execute(_bookingTurnstileWidgetId); }
+    catch (error) { finishReject(error); }
+  });
+}
+
+function resetBookingTurnstile() {
+  _bookingTurnstileToken = '';
+  if (_bookingTurnstileWidgetId !== null && window.turnstile) {
+    try { window.turnstile.reset(_bookingTurnstileWidgetId); } catch (_) {}
+  }
+}
 function bookingTiersForCourt(c) { return isEventBooking() ? eventPricingTiers() : getPricingTiersForCourt(c); }
 
 function syncBookingModeUi() {
@@ -3766,7 +3922,9 @@ function syncBookingModeUi() {
   if ($('findTimeMeta')) $('findTimeMeta').textContent = eventMode
     ? 'Search for at least four consecutive hours on the Main Court.'
     : 'Search the Main Court for a consecutive available slot.';
-  payFull = eventMode || paymentAcceptanceMode === 'full_payment_only';
+  payFull = window.PB_PLATFORM_V1 && _platformBookingAccess
+    ? _platformBookingAccess.booking?.fullPaymentOnly === true
+    : eventMode || paymentAcceptanceMode === 'full_payment_only';
   if ($('findTimeModal')?.classList.contains('active')) populateFindTimeControls();
 }
 
@@ -4029,6 +4187,7 @@ function closeHostSessionModal() {
 
 let _hostSessionCurrent = null;
 let _hostSessionReceiptFile = null;
+let _hostSessionReceiptPreviewUrl = '';
 let _hostSessionPayMethod = 'gcash';
 let _hostSessionStartedAt = null;
 
@@ -4082,9 +4241,8 @@ function hostSessionPaymentHtml(session) {
   `).join('');
   const receiver = hostSessionReceiver(_hostSessionPayMethod);
   const label = hostSessionPaymentMethodLabel(_hostSessionPayMethod);
-  const qr = receiver.qrImage
-    ? `<img src="${receiver.qrImage}" class="op-qr-img qr-clickable" alt="${label} QR" onclick="openQrZoomFromImg(this,'${label} QR')" />`
-    : `<div class="op-qr-placeholder">QR</div>`;
+  const qr = `<img id="hsPaymentQr" class="op-qr-img qr-clickable" alt="${esc(label)} QR" style="display:none" onclick="openQrZoomFromImg(this,'${jsArg(label)} QR')" />
+    <div id="hsPaymentQrPlaceholder" class="op-qr-placeholder">QR</div>`;
   return `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${methodButtons}</div>
     <div class="op-pay-card" style="margin-bottom:10px">
@@ -4128,6 +4286,7 @@ function renderHostSessionPayment(session) {
   const box = $('hsPaymentBox');
   if (!box) return;
   box.innerHTML = hostSessionPaymentHtml(session);
+  assignPaymentQr('hsPaymentQr', 'hsPaymentQrPlaceholder', hostSessionReceiver(_hostSessionPayMethod).qrImage);
   if (_hostSessionReceiptFile) syncHostSessionReceiptPreview();
 }
 
@@ -4149,21 +4308,26 @@ function onHostSessionReceiptPicked(e) {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
   if (!f.type.startsWith('image/')) { toast('Please choose an image file.', 'err'); e.target.value = ''; return; }
-  if (f.size > 5 * 1024 * 1024) { toast('Image too large (max 5 MB).', 'err'); e.target.value = ''; return; }
+  if (f.size > 8 * 1024 * 1024) { toast('Image too large (max 8 MB).', 'err'); e.target.value = ''; return; }
   _hostSessionReceiptFile = f;
   syncHostSessionReceiptPreview();
 }
 
 function syncHostSessionReceiptPreview() {
   if (!_hostSessionReceiptFile) return;
-  if ($('hsReceiptPreview')) $('hsReceiptPreview').src = URL.createObjectURL(_hostSessionReceiptFile);
+  if (_hostSessionReceiptPreviewUrl) URL.revokeObjectURL(_hostSessionReceiptPreviewUrl);
+  _hostSessionReceiptPreviewUrl = URL.createObjectURL(_hostSessionReceiptFile);
+  if ($('hsReceiptPreview')) $('hsReceiptPreview').src = _hostSessionReceiptPreviewUrl;
   if ($('hsReceiptName')) $('hsReceiptName').textContent = _hostSessionReceiptFile.name;
   if ($('hsReceiptPreviewWrap')) $('hsReceiptPreviewWrap').style.display = 'flex';
   if ($('hsReceiptDrop')) $('hsReceiptDrop').style.display = 'none';
 }
 
 function clearHostSessionReceipt() {
+  if (_hostSessionReceiptPreviewUrl) URL.revokeObjectURL(_hostSessionReceiptPreviewUrl);
+  _hostSessionReceiptPreviewUrl = '';
   _hostSessionReceiptFile = null;
+  if ($('hsReceiptPreview')) $('hsReceiptPreview').removeAttribute('src');
   if ($('hsReceiptImg')) $('hsReceiptImg').value = '';
   if ($('hsReceiptPreviewWrap')) $('hsReceiptPreviewWrap').style.display = 'none';
   if ($('hsReceiptDrop')) $('hsReceiptDrop').style.display = '';
@@ -4283,7 +4447,7 @@ function renderPublicHostSession(session) {
   const title = session.title || 'Open Play Session';
   const time = `${fmtT(session.startHour)} - ${fmtT(session.endHour)}`;
   _hostSessionCurrent = session;
-  _hostSessionReceiptFile = null;
+  clearHostSessionReceipt();
   _hostSessionStartedAt = new Date().toISOString();
   _hostSessionPayMethod = hostSessionDigitalMethods()[0] || 'gcash';
   $('hostSessionModal').dataset.sessionId = session.id;
@@ -4681,13 +4845,13 @@ function bookingItemsSummaryHtml(items = uniqueBookingSelections(activeBookingIt
   const dateStr = dates.length > 1 ? dates.map(fmtD).join(' + ') : bookingItemsDate(items) ? fmtD(bookingItemsDate(items)) : '-';
   const rows = [
     ...(isEventBooking() ? ['Package: <strong style="color:var(--lime-ink)">Private Event · Full Payment</strong>'] : []),
-    `Court: ${bookingItemsCourtLabel(items)}`,
-    `Date: ${dateStr}`,
+    `Court: ${esc(bookingItemsCourtLabel(items))}`,
+    `Date: ${esc(dateStr)}`,
   ];
   items.forEach(item => {
     const separateNote = slotsAreConsecutive(item.slots) ? '' : ` <span style="color:var(--warn);font-weight:700">(separate hours)</span>`;
     const datePart = dates.length > 1 ? ` (${fmtDc(item.date)})` : '';
-    rows.push(`Time: ${item.courtName}${datePart}: ${item.timeLabel || itemTimeLabel(item)} &nbsp;(${item.duration} hr${item.duration !== 1 ? 's' : ''})${separateNote}`);
+    rows.push(`Time: ${esc(item.courtName)}${esc(datePart)}: ${esc(item.timeLabel || itemTimeLabel(item))} &nbsp;(${item.duration} hr${item.duration !== 1 ? 's' : ''})${separateNote}`);
   });
   rows.push(`Court Fee: <strong style="color:var(--muted)">${fmt(bookingItemsCourtFee(items))}</strong>`);
   if (svcFee > 0) rows.push(`Booking Fee: <strong style="color:var(--muted)">${bookingFeeDisplay(svcFee, hrs)}</strong>`);
@@ -5076,37 +5240,67 @@ async function loadOperatingHours() {
   if (note) note.textContent = `(${fmtT(openHour)} – ${fmtT(closeHour)} · select any available hours)`;
 }
 
+function safePaymentQrUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    const supabaseHost = new URL(String(window.PB_TENANT_CONFIG?.supabaseUrl || '')).hostname.toLowerCase();
+    const configuredHosts = Array.isArray(window.PB_TENANT_CONFIG?.paymentQrAllowedHosts)
+      ? window.PB_TENANT_CONFIG.paymentQrAllowedHosts.map(host => String(host).trim().toLowerCase()).filter(Boolean)
+      : [];
+    const allowedHosts = new Set([window.location.hostname.toLowerCase(), supabaseHost, ...configuredHosts].filter(Boolean));
+    if (url.protocol !== 'https:' || url.username || url.password || !allowedHosts.has(url.hostname.toLowerCase())) return '';
+    return url.href;
+  } catch (_) {
+    return '';
+  }
+}
+
+function assignPaymentQr(imgId, placeholderId, value) {
+  const img = $(imgId);
+  const placeholder = $(placeholderId);
+  const safeUrl = safePaymentQrUrl(value);
+  if (img) {
+    if (safeUrl) img.src = safeUrl;
+    else img.removeAttribute('src');
+    img.style.display = safeUrl ? '' : 'none';
+  }
+  if (placeholder) placeholder.style.display = safeUrl ? 'none' : '';
+  return safeUrl;
+}
+
 function applyPaymentSettings(settings) {
   paymentReceiverSettings = {
     gcash: {
       number: settings.gcash_merchant_number || '09XX XXX XXXX',
       name: settings.gcash_merchant_name || 'Backyard Pickle',
-      qrImage: settings.gcash_qr_image || '',
+      qrImage: safePaymentQrUrl(settings.gcash_qr_image),
     },
     bdopay: {
       number: settings.gcash_merchant_number || '09XX XXX XXXX',
       name: settings.gcash_merchant_name || 'Backyard Pickle',
-      qrImage: settings.gcash_qr_image || '',
+      qrImage: safePaymentQrUrl(settings.gcash_qr_image),
     },
     maya: {
       number: settings.gcash_merchant_number || '09XX XXX XXXX',
       name: settings.gcash_merchant_name || 'Backyard Pickle',
-      qrImage: settings.gcash_qr_image || '',
+      qrImage: safePaymentQrUrl(settings.gcash_qr_image),
     },
     bpi: {
       number: settings.gcash_merchant_number || '09XX XXX XXXX',
       name: settings.gcash_merchant_name || 'Backyard Pickle',
-      qrImage: settings.gcash_qr_image || '',
+      qrImage: safePaymentQrUrl(settings.gcash_qr_image),
     },
     gotyme: {
       number: settings.gotyme_merchant_number || '',
       name: settings.gotyme_merchant_name || 'Backyard Pickle',
-      qrImage: settings.gotyme_qr_image || '',
+      qrImage: safePaymentQrUrl(settings.gotyme_qr_image),
     },
     pnb: {
       number: settings.pnb_merchant_number || '',
       name: settings.pnb_merchant_name || 'Backyard Pickle',
-      qrImage: settings.pnb_qr_image || '',
+      qrImage: safePaymentQrUrl(settings.pnb_qr_image),
     },
   };
   gcashSettings.checkoutEnabled = settings.gcash_checkout_enabled === '1';
@@ -5114,15 +5308,6 @@ function applyPaymentSettings(settings) {
   gcashSettings.merchantNumber = paymentReceiverSettings.gcash.number;
   gcashSettings.merchantName = paymentReceiverSettings.gcash.name;
   gcashSettings.qrImage = paymentReceiverSettings.gcash.qrImage; // QR for Open Play (from PAYMENT QR SETTINGS, not Platform Remittance)
-
-  // Debug logging
-  console.log('applyPaymentSettings:', {
-    hasQrImage: !!gcashSettings.qrImage,
-    length: gcashSettings.qrImage?.length || 0,
-    startsWithData: gcashSettings.qrImage?.startsWith('data:') || false,
-    merchantNumber: gcashSettings.merchantNumber,
-    merchantName: gcashSettings.merchantName
-  });
 
   paymentMethods.cash = settings.payment_method_cash !== '0';
   paymentMethods.gcash = settings.payment_method_gcash !== '0';
@@ -5141,24 +5326,9 @@ function applyPaymentSettings(settings) {
   if ($('pnMerchantName')) $('pnMerchantName').textContent = paymentReceiverSettings.pnb.name;
 
   // Load QR images from DB — show img and hide placeholder only when image exists
-  if (settings.gcash_qr_image) {
-    const img = $('gcashQrImg');
-    if (img) { img.src = settings.gcash_qr_image; img.style.display = ''; }
-    const ph = $('gcashQrPlaceholder');
-    if (ph) ph.style.display = 'none';
-  }
-  if (settings.gotyme_qr_image) {
-    const img = $('gotymeQrImg');
-    if (img) { img.src = settings.gotyme_qr_image; img.style.display = ''; }
-    const ph = $('gotymeQrPlaceholder');
-    if (ph) ph.style.display = 'none';
-  }
-  if (settings.pnb_qr_image) {
-    const img = $('pnbQrImg');
-    if (img) { img.src = settings.pnb_qr_image; img.style.display = ''; }
-    const ph = $('pnbQrPlaceholder');
-    if (ph) ph.style.display = 'none';
-  }
+  assignPaymentQr('gcashQrImg', 'gcashQrPlaceholder', gcashSettings.qrImage);
+  assignPaymentQr('gotymeQrImg', 'gotymeQrPlaceholder', paymentReceiverSettings.gotyme.qrImage);
+  assignPaymentQr('pnbQrImg', 'pnbQrPlaceholder', paymentReceiverSettings.pnb.qrImage);
 
   applyPaymentMethodVisibility();
   updatePaymentAmountUI();
@@ -5653,6 +5823,18 @@ async function toggleCardSlot(courtId, date, h) {
       return;
     }
   }
+  if (!isEventBooking() && s.length > 0) {
+    const first = Math.min(...s);
+    const last = Math.max(...s);
+    if (i === -1 && h !== first - 1 && h !== last + 1) {
+      toast('Regular booking hours must stay together. Select the hour beside your current block.', 'inf');
+      return;
+    }
+    if (i !== -1 && s.length > 1 && h !== first && h !== last) {
+      toast('Remove an hour from the start or end so the booking remains consecutive.', 'inf');
+      return;
+    }
+  }
   if (i === -1) {
     s.push(h);
     s.sort((a,b) => a-b);
@@ -5765,6 +5947,19 @@ function guestResumeFormDraft() {
 }
 
 function saveGuestBookingResume(extra = {}) {
+  if (window.PB_PLATFORM_V1) {
+    try {
+      const form = guestResumeFormDraft();
+      if (_platformBookingAccess) {
+        _platformBookingAccess.form = { ...form, ...extra };
+        sessionStorage.setItem(PLATFORM_ACCESS_KEY, JSON.stringify(_platformBookingAccess));
+      } else {
+        const pending = readPlatformJson(sessionStorage, PLATFORM_PENDING_DRAFT_KEY);
+        if (pending?.draft) sessionStorage.setItem(PLATFORM_PENDING_DRAFT_KEY, JSON.stringify({ ...pending, form: { ...form, ...extra } }));
+      }
+    } catch (_) {}
+    return;
+  }
   const refs = reservedRefs();
   if (!refs.length || !_reservationStartedAt) return;
   try {
@@ -5832,7 +6027,11 @@ function restoreGuestResumeDraft(form = {}) {
     $('bGcashRef').value = normalizePaymentRef(form.gcashRef || '', $('bPay')?.value || form.payMethod || 'gcash');
     updateRefCount();
   }
-  setPayAmount(form.payFull ? 'full' : 'half');
+  if (window.PB_PLATFORM_V1 && _platformBookingAccess) {
+    payFull = _platformBookingAccess.booking?.fullPaymentOnly === true;
+  } else {
+    setPayAmount(form.payFull ? 'full' : 'half');
+  }
 }
 
 function applyHostBookingDraft() {
@@ -6111,6 +6310,7 @@ async function proceedToBook(courtId = null) {
     toast('Online booking is not live yet. Please call 0915 393 4597 for assistance.', 'inf');
     return;
   }
+  if (window.PB_PLATFORM_V1 && await restorePlatformBookingHold({ openModal: true, silent: true })) return;
   const selections = cardSelectionList();
   if (selections.length === 0) {
     toast('Please select at least one time slot.', 'inf');
@@ -6136,6 +6336,9 @@ async function proceedToBook(courtId = null) {
       toast(`Event bookings require at least ${EVENT_MIN_HOURS} consecutive hours on the Main Court.`, 'err');
       return;
     }
+  } else if (window.PB_PLATFORM_V1 && (selections.length !== 1 || !slotsAreConsecutive(selections[0].slots))) {
+    toast('Select one consecutive block of regular court hours.', 'err');
+    return;
   }
 
   const unavailable = selections.find(sel =>
@@ -6172,6 +6375,37 @@ async function proceedToBook(courtId = null) {
   const reserveIdentity = hostBookingIdentity();
   const reserveItems = bookingSelections.map(sel => makeBookingItemFromSelection(sel, genRef(), groupRef));
   const createdRefs = [];
+
+  if (window.PB_PLATFORM_V1) {
+    // The tenant platform creates an atomic server hold only after customer
+    // details and Turnstile verification. Do not write anonymous placeholders.
+    bookingItems = reserveItems;
+    _reservedRefs = [];
+    _reservedRef = null;
+    _reservationStartedAt = null;
+    _platformBookingAccess = null;
+    if (!window.crypto?.randomUUID) {
+      toast('This browser cannot create a secure booking request. Please update your browser or call 0915 393 4597.', 'err');
+      return;
+    }
+    _platformClientRequestId = null;
+    _platformClientRequestFingerprint = null;
+    selSlots = [...primary.slots];
+    await refreshBookingItemViews(reserveItems);
+    $('bDate').value = selectedDate;
+    applyHostBookingDraft();
+    if (isEventBooking()) payFull = true;
+    updatePaymentAmountUI();
+    wizStartStep = 3;
+    $('bookModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+    hideHostInvite({ restoreScroll: false });
+    const mobileBar = $('mobileBookBar');
+    if (mobileBar) mobileBar.style.display = 'none';
+    wizGoTo(3);
+    stopSlotCountdown();
+    return;
+  }
 
   try {
     for (const item of reserveItems) {
@@ -6236,15 +6470,26 @@ async function proceedToBook(courtId = null) {
   startSlotCountdown();
 }
 
-function closeBookModal() {
+function closeBookModal({ cancel = false } = {}) {
   const itemsToRelease = activeBookingItems();
   $('bookModal').classList.remove('active');
   document.body.style.overflow = '';
   stopSlotCountdown();
+  const savedPlatformFlow = window.PB_PLATFORM_V1 && (
+    _platformBookingAccess || sessionStorage.getItem(PLATFORM_ACCESS_KEY) || sessionStorage.getItem(PLATFORM_PENDING_DRAFT_KEY)
+  );
+  if (savedPlatformFlow && !cancel) {
+    // Escape/minimize keeps the server hold recoverable. The explicit Cancel
+    // button and timeout path clear the local retry identity.
+    resetBookingTurnstile();
+    return;
+  }
   // Cancel the reservation if the user closes without submitting, then refresh
   // the affected grids so temporary "Processing..." slots become available.
   if (reservedRefs().length) releaseReservedBookingViews(itemsToRelease).catch(() => {});
   else clearSelectedBookingUi();
+  if (window.PB_PLATFORM_V1 && cancel) clearPlatformRequestState();
+  resetBookingTurnstile();
 }
 
 function startSlotCountdown(initialSeconds = null) {
@@ -6274,7 +6519,7 @@ function startSlotCountdown(initialSeconds = null) {
       banner.style.display = 'none';
       // Time expired — cancel reservation and close modal.
       toast('⏰ Time expired! Your slot reservation was released.', 'err');
-      closeBookModal();
+      closeBookModal({ cancel: true });
       return;
     }
     secsLeft--;
@@ -6353,7 +6598,10 @@ function wizGoTo(n) {
   $('wizBackBtn').textContent = n <= wizStartStep ? '✕ Cancel' : '← Back';
   $('wizNextBtn').textContent = n === 5 ? '🎾 Confirm Booking' : 'Next →';
   if (n === 2) { renderSlots(); }
-  if (n === 3) { updateWiz3Summary(); }
+  if (n === 3) {
+    updateWiz3Summary();
+    if ($('bookingSecurityCheck')) $('bookingSecurityCheck').style.display = window.PB_PLATFORM_V1 ? '' : 'none';
+  }
   if (n === 4) {
     updatePrice();
     preparePaymentStep();
@@ -6374,6 +6622,10 @@ async function wizNext() {
   } else if (wizStep === 2) {
     if (!$('bDate').value) { bookingValidationError('Please pick a date.', 'bDate', 2); return; }
     if (selSlots.length === 0) { bookingValidationError('Please select at least one time slot.', 'slotsGrid', 2); return; }
+    if (window.PB_PLATFORM_V1 && !slotsAreConsecutive(selSlots)) {
+      bookingValidationError('Please select one consecutive block of hours.', 'slotsGrid', 2);
+      return;
+    }
     wizGoTo(3);
   } else if (wizStep === 3) {
     const name  = ($('bName').value || '').trim();
@@ -6384,6 +6636,28 @@ async function wizNext() {
     if (!phone) { bookingValidationError('Please enter your contact number.', 'bPhone', 3); return; }
     if (!/^(09|\+639)\d{9}$/.test(phone.replace(/\s|-/g,''))) { bookingValidationError('Enter a valid PH number (e.g. 09XX XXX XXXX).', 'bPhone', 3); return; }
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { bookingValidationError('Please enter a valid email address.', 'bEmail', 3); return; }
+    if (isEventBooking()) {
+      const eventType = $('bEventType')?.value || '';
+      const guests = parseInt($('bEventGuests')?.value || '0', 10);
+      if (!eventType) { bookingValidationError('Please select the type of event.', 'bEventType', 3); return; }
+      if (!Number.isInteger(guests) || guests < 1 || guests > EVENT_MAX_GUESTS) {
+        bookingValidationError(`Enter an estimated guest count from 1 to ${EVENT_MAX_GUESTS}.`, 'bEventGuests', 3);
+        return;
+      }
+    }
+    if (window.PB_PLATFORM_V1 && !_platformBookingAccess) {
+      const button = $('wizNextBtn');
+      if (button) { button.disabled = true; button.textContent = 'Securing your slot...'; }
+      try {
+        await createPlatformBookingHold();
+      } catch (error) {
+        toast(error?.message || 'Could not secure this slot. Please try again.', 'err');
+        await refreshBookingItemViews(activeBookingItems()).catch(() => {});
+        return;
+      } finally {
+        if (button) { button.disabled = false; button.textContent = 'Next →'; }
+      }
+    }
     wizGoTo(4);
   } else if (wizStep === 4) {
     const payMethod = $('bPay')?.value || '';
@@ -6407,7 +6681,11 @@ async function wizNext() {
 }
 
 function wizBack() {
-  if (wizStep <= wizStartStep) { closeBookModal(); return; }
+  if (wizStep <= wizStartStep) { closeBookModal({ cancel: true }); return; }
+  if (window.PB_PLATFORM_V1 && _platformBookingAccess && wizStep === 4) {
+    toast('Your slot is already held with these details. Cancel and start again if you need to change them.', 'inf');
+    return;
+  }
   wizGoTo(wizStep - 1);
 }
 
@@ -6421,7 +6699,7 @@ function updateWiz3SummaryLegacy() {
   const total = courtTotal + svcFee;
   const dateStr = $('bDate').value ? fmtD($('bDate').value) : '—';
   $('wiz3Summary').innerHTML = [
-    `🏟️ ${court ? court.name : '—'}`,
+    `🏟️ ${court ? esc(court.name) : '—'}`,
     `📅 ${dateStr}`,
     mn !== null ? `⏰ ${timeLabel} &nbsp;(${hrs} hr${hrs !== 1 ? 's' : ''})${separateNote}` : '',
     `🎾 Court Fee: <strong style="color:var(--muted)">${fmt(courtTotal)}</strong>`,
@@ -6810,7 +7088,7 @@ async function renderSlots() {
     g.innerHTML = `
       <div style="background:rgba(255,152,0,.08);border:1.5px solid rgba(255,152,0,.5);border-radius:12px;padding:20px 18px;text-align:center;margin:4px 0">
         <div style="font-size:1.8rem;margin-bottom:8px">🚧</div>
-        <div style="font-weight:800;font-size:.95rem;color:#ff9800;margin-bottom:6px">${court.name} — Temporarily Closed</div>
+        <div style="font-weight:800;font-size:.95rem;color:#ff9800;margin-bottom:6px">${esc(court.name)} — Temporarily Closed</div>
         <div style="font-size:.84rem;color:var(--text);margin-bottom:10px">${_repair.reason}</div>
         <div style="font-size:.78rem;color:var(--muted)">
           Closed from <strong style="color:#ff9800">April 27</strong> to <strong style="color:#ff9800">April 29, 2026</strong>.<br/>
@@ -6941,6 +7219,20 @@ function toggleSlot(h) {
     }
     selSlots.push(...block);
     toast(`${EVENT_MIN_HOURS}-hour event selected: ${fmtT(h)} - ${fmtT(h + EVENT_MIN_HOURS)}.`, 'ok');
+  } else if (selSlots.length > 0) {
+    const first = Math.min(...selSlots);
+    const last = Math.max(...selSlots);
+    if (i === -1 && h !== first - 1 && h !== last + 1) {
+      toast('Booking hours must be consecutive. Select the hour beside your current block.', 'inf');
+      return;
+    }
+    if (i !== -1 && selSlots.length > 1 && h !== first && h !== last) {
+      toast('Remove an hour from the start or end to keep the booking consecutive.', 'inf');
+      return;
+    }
+    if (i === -1) selSlots.push(h);
+    else selSlots.splice(i, 1);
+    selSlots.sort((a,b) => a - b);
   } else if (i === -1) {
     selSlots.push(h);
     selSlots.sort((a,b) => a - b);
@@ -7091,7 +7383,9 @@ function pickPay(m) {
   gcashSettings.checkoutVisited = false;
 
   // Host pricing is automatic: 25% only before the five-day deadline.
-  payFull = isVerifiedHostBooking() && !hostBookingDepositEligible();
+  payFull = window.PB_PLATFORM_V1 && _platformBookingAccess
+    ? _platformBookingAccess.booking?.fullPaymentOnly === true
+    : isVerifiedHostBooking() && !hostBookingDepositEligible();
   ['gcPat50','gtPat50','pnPat50'].forEach(id => $(id)?.classList.toggle('on', !payFull));
   ['gcPat100','gtPat100','pnPat100'].forEach(id => $(id)?.classList.toggle('on', payFull));
 
@@ -7282,6 +7576,9 @@ function updatePaymentAmountUI() {
   const eventBooking = isEventBooking();
   const dpOnly = paymentAcceptanceMode === 'downpayment_only';
   const fpOnly = paymentAcceptanceMode === 'full_payment_only';
+  const platformPaymentAuthority = window.PB_PLATFORM_V1 && _platformBookingAccess
+    ? _platformBookingAccess.booking?.fullPaymentOnly === true
+    : null;
 
   // Update booking wizard payment toggles
   ['gc', 'gt', 'pn'].forEach(p => {
@@ -7293,7 +7590,13 @@ function updatePaymentAmountUI() {
     const dpLabel = btn50?.querySelector('div:first-child');
     if (dpLabel) dpLabel.textContent = eventBooking ? 'Full Payment' : hostBooking ? (hostDeposit ? 'Fee + 25% Court' : 'Full Payment') : 'Fee + 50% Court';
 
-    if (eventBooking || fpOnly) {
+    if (platformPaymentAuthority !== null) {
+      if (label) label.style.display = 'none';
+      if (toggle) toggle.style.display = 'none';
+      if (btn50) btn50.classList.toggle('on', !platformPaymentAuthority);
+      if (btn100) btn100.classList.toggle('on', platformPaymentAuthority);
+      payFull = platformPaymentAuthority;
+    } else if (eventBooking || fpOnly) {
       if (label) label.style.display = 'none';
       if (toggle) toggle.style.display = 'none';
       if (btn50) btn50.classList.remove('on');
@@ -7328,6 +7631,11 @@ function updatePaymentAmountUI() {
 }
 
 function setPayAmount(mode) {
+  if (window.PB_PLATFORM_V1 && _platformBookingAccess) {
+    payFull = _platformBookingAccess.booking?.fullPaymentOnly === true;
+    updatePrice();
+    return;
+  }
   if (isEventBooking()) mode = 'full';
   if (!isEventBooking() && isVerifiedHostBooking()) mode = hostBookingDepositEligible() ? 'half' : 'full';
   payFull = (mode === 'full');
@@ -7597,12 +7905,121 @@ async function submitBookingLegacy(e) {
   }
 }
 
+async function submitPlatformBooking() {
+  const submitBtn = $('wizNextBtn');
+  if (submitBtn?.disabled) return;
+  const access = _platformBookingAccess;
+  if (!access?.reference || !access?.bookingToken) {
+    toast('Your secure slot hold is missing. Please cancel and select the time again.', 'err');
+    return;
+  }
+  const payMethod = $('bPay')?.value || '';
+  const paymentReference = $('bGcashRef')?.value?.trim() || '';
+  const checks = [
+    [!isDigitalPayMethod(payMethod), 'Please select an available online full-payment method.', 'payMethodBlock', 4],
+    [!$('bookingPolicyAgree')?.checked, 'Please agree to the booking and payment policy before confirming.', $('bookingPolicyAgree')?.closest('.booking-policy-check'), 5],
+    [!paymentReference, payMethod === 'bpi' ? 'Please enter your BPI Confirmation No. after paying.' : 'Please enter your payment reference number after paying.', 'bGcashRef', 5],
+    [payMethod === 'gcash' && !isGcashRefValid(paymentReference), 'GCash reference number must be exactly 13 digits.', 'bGcashRef', 5],
+    [payMethod === 'bdopay' && !isBdoPayRefValid(paymentReference), 'BDO Pay reference must look like BN-YYYYMMDD-########.', 'bGcashRef', 5],
+    [payMethod === 'maya' && !isMayaRefValid(paymentReference), 'Maya Reference ID must contain 12 letters or numbers.', 'bGcashRef', 5],
+    [payMethod === 'bpi' && !isBpiConfirmationValid(paymentReference), 'Enter the BPI Confirmation No. from the receipt.', 'bGcashRef', 5],
+    [!_receiptFile, 'Please upload your receipt screenshot before confirming.', 'bReceiptDrop', 5],
+  ];
+  for (const [failed, message, target, step] of checks) {
+    if (!failed) continue;
+    bookingValidationError(message, target, step);
+    return;
+  }
+
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Uploading receipt...'; }
+  try {
+    const result = await DB.submitPublicPaymentReceipt({
+      bookingReference: access.reference,
+      bookingToken: access.bookingToken,
+      paymentMethod: payMethod,
+      paymentReference,
+      receiptFile: _receiptFile,
+    });
+    const item = activeBookingItems()[0] || {};
+    const server = access.booking || {};
+    const booking = {
+      ...item,
+      ref: access.reference,
+      fullName: $('bName').value.trim(),
+      contactNumber: $('bPhone').value.trim(),
+      email: $('bEmail').value.trim(),
+      courtName: server.courtName || item.courtName,
+      bookingType: server.bookingType || item.bookingType || bookingMode,
+      total: Number(server.totalAmount || item.total || 0),
+      downpayment: Number(server.totalAmount || item.total || 0),
+      paymentMethod: payMethod,
+      gcashRef: paymentReference,
+      paymentStatus: 'for_verification',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      _receiptResult: {
+        status: result.status || 'manual_review',
+        flags: result.flags || [],
+        message: result.publicReason || 'Your full-payment receipt is awaiting staff review.',
+      },
+    };
+    try {
+      sessionStorage.setItem(PLATFORM_LAST_ACCESS_KEY, JSON.stringify({
+        reference: access.reference,
+        bookingToken: access.bookingToken,
+        accessExpiresAt: access.accessExpiresAt,
+      }));
+    } catch (_) {}
+    stopSlotCountdown();
+    showInvoice(booking);
+    await startSavedPlatformBookingPolling();
+    resetForm({ platformSuccess: true });
+    toast(result.publicReason || `Booking ${access.reference} is awaiting payment review.`, 'ok');
+    if (DB.clearCache) DB.clearCache(['bookings', 'platformAvailability']);
+    await renderCourts();
+  } catch (error) {
+    // The upload may have reached the server even when the browser timed out or
+    // lost the response. Reconcile against the protected status endpoint before
+    // asking the customer to submit the same payment proof again.
+    try {
+      const recovered = await DB.getPublicBookingStatus({
+        bookingReference: access.reference,
+        bookingToken: access.bookingToken,
+      });
+      const recoveredStatus = String(recovered?.status || '').toLowerCase();
+      const receiptStatus = String(
+        recovered?.receiptStatus || recovered?.receipt?.status || 'none'
+      ).toLowerCase();
+      const receiptRecorded = Boolean(recovered?.receipt) ||
+        !['', 'none', 'not_submitted', 'missing'].includes(receiptStatus);
+      if (receiptRecorded || (recoveredStatus && recoveredStatus !== 'pending_payment')) {
+        try {
+          sessionStorage.setItem(PLATFORM_LAST_ACCESS_KEY, JSON.stringify({
+            reference: access.reference,
+            bookingToken: access.bookingToken,
+            accessExpiresAt: access.accessExpiresAt,
+          }));
+        } catch (_) {}
+        stopSlotCountdown();
+        await startSavedPlatformBookingPolling();
+        resetForm({ platformSuccess: true });
+        toast(`Payment proof for ${access.reference} was received. You can track its review status here.`, 'ok');
+        return;
+      }
+    } catch (_) {}
+    toast(error?.message || 'We could not confirm the receipt upload. Please try again before the hold expires.', 'err');
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Confirm Booking'; }
+  }
+}
+
 async function submitBooking(e) {
   if (e) e.preventDefault();
   if (!window.PB_PUBLIC_BOOKING_ENABLED) {
     toast('Online booking is not live yet. Please call 0915 393 4597 for assistance.', 'inf');
     return;
   }
+  if (window.PB_PLATFORM_V1) return submitPlatformBooking();
   const submitBtn = $('wizNextBtn');
   if (submitBtn?.disabled) return;
 
@@ -7841,14 +8258,17 @@ async function submitBooking(e) {
    RECEIPT UPLOAD + AUTO-VERIFICATION
    ============================================= */
 let _receiptFile = null;
+let _receiptPreviewObjectUrl = '';
 
 function onReceiptPicked(e) {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
   if (!f.type.startsWith('image/')) { toast('Please choose an image file.', 'err'); e.target.value = ''; return; }
-  if (f.size > 5 * 1024 * 1024) { toast('Image too large (max 5 MB).', 'err'); e.target.value = ''; return; }
+  if (f.size > 8 * 1024 * 1024) { toast('Image too large (max 8 MB).', 'err'); e.target.value = ''; return; }
   _receiptFile = f;
-  const prev = $('bReceiptPreview'); if (prev) prev.src = URL.createObjectURL(f);
+  if (_receiptPreviewObjectUrl) URL.revokeObjectURL(_receiptPreviewObjectUrl);
+  _receiptPreviewObjectUrl = URL.createObjectURL(f);
+  const prev = $('bReceiptPreview'); if (prev) prev.src = _receiptPreviewObjectUrl;
   if ($('bReceiptName')) $('bReceiptName').textContent = f.name;
   if ($('bReceiptPreviewWrap')) $('bReceiptPreviewWrap').style.display = 'flex';
   const drop = $('bReceiptDrop');
@@ -7859,7 +8279,10 @@ function onReceiptPicked(e) {
 }
 
 function clearReceipt() {
+  if (_receiptPreviewObjectUrl) URL.revokeObjectURL(_receiptPreviewObjectUrl);
+  _receiptPreviewObjectUrl = '';
   _receiptFile = null;
+  if ($('bReceiptPreview')) $('bReceiptPreview').removeAttribute('src');
   if ($('bReceiptImg')) $('bReceiptImg').value = '';
   if ($('bReceiptPreviewWrap')) $('bReceiptPreviewWrap').style.display = 'none';
   const drop = $('bReceiptDrop'); if (drop) drop.style.display = '';
@@ -7908,7 +8331,7 @@ function sendCustomerConfirmationEmail(booking) {
   DB.sendConfirmationEmail(booking, { allowFailure: true }).catch(() => {});
 }
 
-function resetForm() {
+function resetForm({ platformSuccess = false } = {}) {
   clearAllBookingInvalids();
   $('bookForm').reset();
   clearReceipt();
@@ -7943,7 +8366,7 @@ function resetForm() {
   if ($('bookingPolicyAgree')) $('bookingPolicyAgree').checked = false;
   gcashSettings.checkoutVisited = false;
   document.querySelectorAll('.pay-opt').forEach(el => el.classList.remove('on'));
-  closeBookModal();
+  closeBookModal({ cancel: platformSuccess });
   updatePrice();
   wizGoTo(1);
   renderCourts();
@@ -8358,6 +8781,12 @@ function startRealtime() {
       refreshLiveViews().catch(() => {});
     }, 120);
   };
+  if (window.PB_PLATFORM_V1) {
+    // Anonymous visitors intentionally cannot subscribe to raw tenant tables.
+    // Poll only the safe bootstrap/availability RPCs at a modest interval.
+    window.setInterval(onChange, 30000);
+    return;
+  }
   _supabase.channel('public-rt')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'courts' }, onChange)
@@ -8440,6 +8869,262 @@ function dismissSplash() {
   document.body.style.overflow = '';
   sp.addEventListener('transitionend', () => { sp.style.display = 'none'; }, { once: true });
 }
+
+function platformBookingItemFromSaved(draft, booking = {}) {
+  const slots = [...new Set((draft?.slots || []).map(Number).filter(Number.isInteger))].sort((a, b) => a - b);
+  return {
+    ...draft,
+    ref: booking.reference || draft?.ref || null,
+    courtId: String(draft?.courtId || ''),
+    courtName: booking.courtName || draft?.courtName || 'Main Court',
+    slots,
+    duration: slots.length,
+    startTime: slots.length ? fmtT(slots[0]) : '',
+    endTime: slots.length ? fmtT(slots[slots.length - 1] + 1) : '',
+    timeLabel: slotsTimeLabel(slots),
+    bookingType: booking.bookingType || draft?.bookingType || 'regular',
+    courtFee: Number(booking.subtotalAmount ?? draft?.courtFee ?? 0),
+    serviceFee: Number(booking.serviceFeeAmount ?? draft?.serviceFee ?? 0),
+    total: Number(booking.totalAmount ?? draft?.total ?? 0),
+  };
+}
+
+async function restorePlatformDraftUi(saved, { openModal = true, held = false } = {}) {
+  const draft = saved?.draft;
+  if (!draft?.courtId || !draft?.date || !Array.isArray(draft?.slots) || !draft.slots.length) return false;
+  const serverBooking = saved?.booking || {};
+  bookingMode = (serverBooking.bookingType || draft.bookingType) === 'event' ? 'event' : 'regular';
+  syncBookingModeUi();
+  const item = platformBookingItemFromSaved(draft, serverBooking);
+  bookingItems = [item];
+  selSlots = [...item.slots];
+  const courts = await DB.getCourts();
+  court = courts.find(candidate => String(candidate.id) === String(item.courtId)) || {
+    id: item.courtId,
+    name: item.courtName,
+    rate: item.rate,
+    rateSchedule: item.tiers,
+  };
+  pricingTiers = bookingTiersForCourt(court);
+  $('bDate').value = item.date;
+  sharedCourtDate = normalizedCourtBrowseDate(item.date);
+  syncSharedCourtDateUI(sharedCourtDate);
+  if (held) _platformBookingAccess = saved;
+  restoreGuestResumeDraft(saved.form || {
+    name: draft.fullName,
+    phone: draft.contactNumber,
+    email: draft.email,
+    eventType: draft.eventType,
+    eventGuests: draft.eventGuestCount,
+    eventNotes: draft.eventSetupNotes,
+  });
+  payFull = held ? serverBooking.fullPaymentOnly === true : isEventBooking();
+  updatePaymentAmountUI();
+  updatePrice();
+  if (openModal) {
+    wizStartStep = 3;
+    $('bookModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+    hideHostInvite({ restoreScroll: false });
+    wizGoTo(held ? Math.max(4, Number(saved.form?.step || 4)) : 3);
+    if (held) {
+      const expiresMs = new Date(serverBooking.expiresAt || '').getTime();
+      _reservationStartedAt = Number.isFinite(expiresMs)
+        ? new Date(expiresMs - RESERVATION_MINUTES * 60 * 1000).toISOString()
+        : new Date().toISOString();
+      const secondsLeft = Math.max(0, Math.floor((expiresMs - Date.now()) / 1000));
+      startSlotCountdown(secondsLeft);
+    }
+  }
+  return true;
+}
+
+async function restorePlatformBookingHold({ openModal = false, silent = false } = {}) {
+  if (!window.PB_PLATFORM_V1) return false;
+  const savedAccess = _platformBookingAccess || readPlatformJson(sessionStorage, PLATFORM_ACCESS_KEY);
+  if (savedAccess?.reference && savedAccess?.bookingToken) {
+    try {
+      const status = await DB.getPublicBookingStatus({
+        bookingReference: savedAccess.reference,
+        bookingToken: savedAccess.bookingToken,
+      });
+      savedAccess.booking = { ...(savedAccess.booking || {}), ...status };
+      if (status.status === 'pending_payment' && new Date(status.expiresAt || '').getTime() > Date.now()) {
+        _platformBookingAccess = savedAccess;
+        sessionStorage.setItem(PLATFORM_ACCESS_KEY, JSON.stringify(savedAccess));
+        await restorePlatformDraftUi(savedAccess, { openModal, held: true });
+        if (openModal && !silent) toast(`Booking ${savedAccess.reference} was restored. Complete payment before the timer ends.`, 'ok');
+        return true;
+      }
+      sessionStorage.setItem(PLATFORM_LAST_ACCESS_KEY, JSON.stringify({
+        reference: savedAccess.reference,
+        bookingToken: savedAccess.bookingToken,
+        accessExpiresAt: savedAccess.accessExpiresAt,
+      }));
+      clearPlatformRequestState();
+    } catch (error) {
+      if (!silent) toast(error?.message || 'The saved booking hold could not be restored.', 'err');
+      if ([401, 403].includes(Number(error?.httpStatus))) clearPlatformRequestState();
+    }
+  }
+
+  const pending = readPlatformJson(sessionStorage, PLATFORM_PENDING_DRAFT_KEY);
+  const request = readPlatformJson(localStorage, PLATFORM_REQUEST_KEY);
+  if (pending?.draft && validPlatformRequestRecord(request, pending.fingerprint)) {
+    _platformClientRequestId = request.clientRequestId;
+    _platformClientRequestFingerprint = request.fingerprint;
+    await restorePlatformDraftUi(pending, { openModal, held: false });
+    if (openModal && !silent) toast('Your booking details were restored. Continue to retry the same secure request.', 'inf');
+    return true;
+  }
+  return false;
+}
+
+function publicBookingStatusCopy(booking) {
+  const status = String(booking?.status || '').toLowerCase();
+  const payment = String(booking?.paymentStatus || '').toLowerCase();
+  if (status === 'confirmed' || payment === 'paid') return 'Confirmed — your payment was approved.';
+  if (status === 'payment_review' || payment === 'pending') return 'Payment receipt received — awaiting staff review.';
+  if (status === 'expired') return 'Expired — the payment window ended before approval.';
+  if (status === 'cancelled' || payment === 'rejected') return 'Not confirmed — please contact Backyard Pickle if you already paid.';
+  return 'Booking is being processed.';
+}
+
+function renderPublicBookingStatus(reference, booking) {
+  let bar = $('platformBookingStatus');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'platformBookingStatus';
+    bar.setAttribute('role', 'status');
+    bar.style.cssText = 'margin:12px auto 0;max-width:1180px;padding:12px 16px;border:1px solid var(--border);border-radius:12px;background:var(--card);display:flex;gap:12px;align-items:center;justify-content:space-between;font-size:.8rem';
+    const text = document.createElement('span');
+    text.id = 'platformBookingStatusText';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'btn btn-g btn-sm';
+    close.textContent = 'Dismiss';
+    close.addEventListener('click', dismissPublicBookingStatus);
+    bar.append(text, close);
+    $('courts')?.before(bar);
+  }
+  $('platformBookingStatusText').textContent = `Booking ${reference}: ${publicBookingStatusCopy(booking)}`;
+}
+
+function dismissPublicBookingStatus() {
+  if (_platformStatusPoll) clearInterval(_platformStatusPoll);
+  _platformStatusPoll = null;
+  try { sessionStorage.removeItem(PLATFORM_LAST_ACCESS_KEY); } catch (_) {}
+  $('platformBookingStatus')?.remove();
+}
+
+async function pollSavedPlatformBookingStatus() {
+  if (!window.PB_PLATFORM_V1) return false;
+  const access = readPlatformJson(sessionStorage, PLATFORM_LAST_ACCESS_KEY);
+  if (!access?.reference || !access?.bookingToken) return false;
+  if (access.accessExpiresAt && new Date(access.accessExpiresAt).getTime() <= Date.now()) {
+    dismissPublicBookingStatus();
+    return false;
+  }
+  try {
+    const booking = await DB.getPublicBookingStatus({ bookingReference: access.reference, bookingToken: access.bookingToken });
+    renderPublicBookingStatus(access.reference, booking);
+    const terminal = ['confirmed', 'cancelled', 'expired', 'completed'].includes(String(booking.status || '').toLowerCase()) ||
+      ['paid', 'rejected', 'refunded'].includes(String(booking.paymentStatus || '').toLowerCase());
+    if (terminal && _platformStatusPoll) {
+      clearInterval(_platformStatusPoll);
+      _platformStatusPoll = null;
+    }
+    return !terminal;
+  } catch (error) {
+    if ([401, 403].includes(Number(error?.httpStatus))) dismissPublicBookingStatus();
+    return ![401, 403].includes(Number(error?.httpStatus));
+  }
+}
+
+async function startSavedPlatformBookingPolling() {
+  const shouldContinue = await pollSavedPlatformBookingStatus();
+  if (shouldContinue && !_platformStatusPoll && sessionStorage.getItem(PLATFORM_LAST_ACCESS_KEY)) {
+    _platformStatusPoll = setInterval(() => pollSavedPlatformBookingStatus().catch(() => {}), 30000);
+  }
+}
+
+async function createPlatformBookingHold() {
+  if (!window.PB_PLATFORM_V1) return null;
+  if (_platformBookingAccess?.bookingToken) return _platformBookingAccess;
+  const items = uniqueBookingSelections(activeBookingItems());
+  if (items.length !== 1 || !slotsAreConsecutive(items[0]?.slots || [])) {
+    throw new Error('Select one consecutive block of hours for this booking.');
+  }
+  const item = items[0];
+  if (!window.crypto?.randomUUID) throw new Error('This browser cannot create a secure booking request. Please update it and try again.');
+  const bookingType = isEventBooking() ? 'event' : 'regular';
+  const eventGuests = parseInt($('bEventGuests')?.value || '1', 10);
+  const draft = {
+    ...item,
+    bookingType,
+    fullName: $('bName').value.trim(),
+    contactNumber: $('bPhone').value.trim(),
+    email: $('bEmail').value.trim(),
+    eventType: bookingType === 'event' ? $('bEventType')?.value || null : null,
+    eventGuestCount: bookingType === 'event' ? eventGuests : 1,
+    eventSetupNotes: bookingType === 'event' ? ($('bEventNotes')?.value || '').trim() : null,
+  };
+  const requestIdentity = await platformRequestIdentity(draft);
+  draft.clientRequestId = requestIdentity.clientRequestId;
+  const form = guestResumeFormDraft();
+  sessionStorage.setItem(PLATFORM_PENDING_DRAFT_KEY, JSON.stringify({
+    draft,
+    form,
+    fingerprint: requestIdentity.fingerprint,
+    clientRequestId: requestIdentity.clientRequestId,
+    savedAt: new Date().toISOString(),
+  }));
+  try {
+    const turnstileToken = await getBookingTurnstileToken();
+    const serverBooking = await DB.createPublicBooking(draft, { turnstileToken });
+    if (!serverBooking.bookingToken) throw new Error('The booking service did not return secure customer access.');
+    const savedItem = {
+      ...item,
+      ref: serverBooking.reference,
+      bookingType,
+      courtName: serverBooking.courtName || item.courtName,
+      courtFee: Number(serverBooking.subtotalAmount || 0),
+      serviceFee: Number(serverBooking.serviceFeeAmount || 0),
+      total: Number(serverBooking.totalAmount || 0),
+      eventType: draft.eventType,
+      eventGuestCount: draft.eventGuestCount,
+      eventSetupNotes: draft.eventSetupNotes,
+    };
+    bookingItems = [savedItem];
+    selSlots = [...savedItem.slots];
+    payFull = serverBooking.fullPaymentOnly === true;
+    _platformBookingAccess = {
+      reference: serverBooking.reference,
+      bookingToken: serverBooking.bookingToken,
+      expiresAt: serverBooking.expiresAt,
+      accessExpiresAt: serverBooking.accessExpiresAt,
+      booking: serverBooking,
+      draft,
+      form: { ...form, step: 4 },
+      fingerprint: requestIdentity.fingerprint,
+      clientRequestId: requestIdentity.clientRequestId,
+    };
+    try {
+      sessionStorage.setItem(PLATFORM_ACCESS_KEY, JSON.stringify(_platformBookingAccess));
+    } catch (_) {}
+    _reservationStartedAt = new Date().toISOString();
+    const expiresMs = new Date(serverBooking.expiresAt || '').getTime();
+    const secondsLeft = Number.isFinite(expiresMs)
+      ? Math.max(1, Math.floor((expiresMs - Date.now()) / 1000))
+      : RESERVATION_MINUTES * 60;
+    startSlotCountdown(secondsLeft);
+    updatePrice();
+    toast(`Slot held. Complete full payment within ${Math.max(1, Math.ceil(secondsLeft / 60))} minutes.`, 'ok');
+    return _platformBookingAccess;
+  } finally {
+    resetBookingTurnstile();
+  }
+}
 async function startBookingFromSplash(mode) {
   dismissSplash();
   await setBookingMode(mode);
@@ -8463,7 +9148,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   await expireStaleVerifyingBookings();
   await renderCourts();
   initGuestResumePersistence();
-  await maybeResumeGuestBooking();
+  if (window.PB_PLATFORM_V1) await restorePlatformBookingHold({ openModal: true });
+  else await maybeResumeGuestBooking();
+  await startSavedPlatformBookingPolling();
   await maybeOpenHostSessionLink();
   initHostInvitePopup();
   startRealtime();
@@ -8610,7 +9297,7 @@ async function openPlaySignup(courtId, date, h, courtName) {
     return;
   }
   _opSignupData = { courtId, courtName, date, hour: session.start, sessionEnd: session.end, sessionLabel: session.label, fullPay: false, payMethod: defaultPayMethod, gcashRef: '', startedAt: new Date().toISOString() };
-  _opReceiptFile = null;
+  clearOpReceipt();
   const sysFee = _serviceFeeRate;
   const opTotal = openPlayFee + sysFee;
   const half = opTotal / 2;
@@ -8807,10 +9494,9 @@ function opPickPay(method) {
     const displayReceiverName = method === 'gcash'
       ? (maskGcashOwnerName(receiver.name) || 'Court owner account')
       : (receiver.name || 'Court owner account');
-    const copyValue = (receiver.number || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const qrDisplay = receiver.qrImage
-      ? `<img class="op-qr-img qr-clickable" src="${receiver.qrImage}" alt="${meta.label} QR" onclick="openQrZoomFromImg(this,'${meta.label} QR')" />`
-      : `<div class="op-qr-placeholder">📸<br>No QR</div>`;
+    const copyValue = jsArg(receiver.number || '');
+    const qrDisplay = `<img id="opPaymentQr" class="op-qr-img qr-clickable" style="display:none" alt="${esc(meta.label)} QR" onclick="openQrZoomFromImg(this,'${jsArg(meta.label)} QR')" />
+      <div id="opPaymentQrPlaceholder" class="op-qr-placeholder">📸<br>No QR</div>`;
     const dpControlsHtml = openPlayDpControlsHtml(opTotal);
     info.innerHTML = `
       <div class="op-payment-combo">
@@ -8819,7 +9505,7 @@ function opPickPay(method) {
           <div class="op-send-panel">
             <div class="op-send-title">${meta.icon} Send ${meta.label} Payment To</div>
             ${receiver.number ? `<div class="op-number-row">
-              <span class="op-number">${receiver.number}</span>
+              <span class="op-number">${esc(receiver.number)}</span>
               <button type="button" class="op-mini-btn" onclick="copyToClipboard('${copyValue}')">Copy</button>
             </div>` : ''}
             <div class="op-send-name">${esc(displayReceiverName)}</div>
@@ -8833,7 +9519,7 @@ function opPickPay(method) {
           <div>
             <div class="op-send-title">${meta.icon} Send ${meta.label} Payment To</div>
             ${receiver.number ? `<div class="op-number-row">
-              <span class="op-number">${receiver.number}</span>
+              <span class="op-number">${esc(receiver.number)}</span>
               <button type="button" class="op-mini-btn" onclick="copyToClipboard('${copyValue}')">📋 Copy</button>
             </div>` : ''}
             <div class="op-send-name">${esc(displayReceiverName)}</div>
@@ -8866,6 +9552,7 @@ function opPickPay(method) {
         </div>
       </div>
       </div>`;
+    assignPaymentQr('opPaymentQr', 'opPaymentQrPlaceholder', receiver.qrImage);
     syncOpReceiptPreview();
   } else if (method === 'cash') {
     info.innerHTML = `<div class="op-cash-card">
@@ -8923,26 +9610,32 @@ function closeOpModal() {
 
 /* ── Open Play receipt upload + auto-verification ──────────────────────── */
 let _opReceiptFile = null;
+let _opReceiptPreviewUrl = '';
 
 function onOpReceiptPicked(e) {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
   if (!f.type.startsWith('image/')) { toast('Please choose an image file.', 'err'); e.target.value = ''; return; }
-  if (f.size > 5 * 1024 * 1024) { toast('Image too large (max 5 MB).', 'err'); e.target.value = ''; return; }
+  if (f.size > 8 * 1024 * 1024) { toast('Image too large (max 8 MB).', 'err'); e.target.value = ''; return; }
   _opReceiptFile = f;
   syncOpReceiptPreview();
 }
 
 function syncOpReceiptPreview() {
   if (!_opReceiptFile) return;
-  const prev = $('opReceiptPreview'); if (prev) prev.src = URL.createObjectURL(_opReceiptFile);
+  if (_opReceiptPreviewUrl) URL.revokeObjectURL(_opReceiptPreviewUrl);
+  _opReceiptPreviewUrl = URL.createObjectURL(_opReceiptFile);
+  const prev = $('opReceiptPreview'); if (prev) prev.src = _opReceiptPreviewUrl;
   if ($('opReceiptName')) $('opReceiptName').textContent = _opReceiptFile.name;
   if ($('opReceiptPreviewWrap')) $('opReceiptPreviewWrap').style.display = 'flex';
   const drop = $('opReceiptDrop'); if (drop) drop.style.display = 'none';
 }
 
 function clearOpReceipt() {
+  if (_opReceiptPreviewUrl) URL.revokeObjectURL(_opReceiptPreviewUrl);
+  _opReceiptPreviewUrl = '';
   _opReceiptFile = null;
+  if ($('opReceiptPreview')) $('opReceiptPreview').removeAttribute('src');
   if ($('opReceiptImg')) $('opReceiptImg').value = '';
   if ($('opReceiptPreviewWrap')) $('opReceiptPreviewWrap').style.display = 'none';
   const drop = $('opReceiptDrop'); if (drop) drop.style.display = '';
@@ -9164,8 +9857,8 @@ async function submitOpenPlay() {
 }
 </script>
 <script src="supabase.min.js"></script>
-<script src="tenant-config.js?v=20260718-auth-activation-v1"></script>
-<script src="supabase-config.js?v=20260718-auth-activation-v1"></script>
+<script src="tenant-config.js?v=20260718-platform-live-v2"></script>
+<script src="supabase-config.js?v=20260718-platform-live-v2"></script>
 
 <!-- MOBILE STICKY BOOK NOW BAR -->
 <div id="mobileBookBar" class="mobile-book-bar" style="display:none">

@@ -2061,6 +2061,7 @@ tr:hover td { background: var(--bg2); }
     </div>
     <button class="btn-icon burger" onclick="toggleSidebar()">&#9776;</button>
     <button class="btn-icon" onclick="toggleTheme()" id="themeBtn" title="Toggle Theme"></button>
+    <button class="btn-icon" onclick="openMfaModal()" id="mfaBtn" title="Two-step verification">&#128737;</button>
     <button class="btn-icon" onclick="openChangePwModal()" id="changePwBtn" title="Change Password">&#128273;</button>
     <button class="btn btn-d" onclick="logout()" style="font-size:13px"><span class="sign-out-text">Sign Out</span><span class="sign-out-icon" aria-hidden="true">&#x23FB;</span></button>
   </div>
@@ -2080,7 +2081,7 @@ tr:hover td { background: var(--bg2); }
     <div class="sb-section">
       <div class="nav-grp">Management</div>
       <div class="nav-item" data-s="courts" data-perm="courts" onclick="goto('courts')"><span>&#127967;</span> Courts</div>
-      <div class="nav-item" data-s="blocked" data-perm="open_play" onclick="goto('blocked')"><span>&#127934;</span> Open Play</div>
+      <div class="nav-item" data-s="blocked" data-perm="open_play" onclick="goto('blocked')"><span>&#128683;</span> Blocked Dates</div>
       <div class="nav-item" data-s="hosts" data-perm="host_open_play" onclick="goto('hosts')"><span>&#128101;</span> Host Center</div>
       <div class="nav-item" data-s="gamemgr" data-perm="open_play" onclick="goto('gamemgr')"><span>&#127955;</span> Game Manager</div>
       <div class="nav-item" data-s="maintenance" data-perm="maintenance" onclick="goto('maintenance')"><span>&#128295;</span> Maintenance</div>
@@ -2455,7 +2456,7 @@ tr:hover td { background: var(--bg2); }
     <div id="sec-courts" class="adm-sec">
       <div class="toolbar">
         <h2>🏟️ COURT MANAGEMENT</h2>
-        <button class="btn btn-p" onclick="openCourtModal()">+ Add Court</button>
+        <button class="btn btn-p" id="addCourtBtn" onclick="openCourtModal()">+ Add Court</button>
       </div>
 
       <!-- OPERATING HOURS PANEL -->
@@ -2635,7 +2636,7 @@ tr:hover td { background: var(--bg2); }
       <div class="toolbar"><h2>🎾 OPEN PLAY</h2></div>
 
       <!-- OPEN PLAY HOURS -->
-      <div class="panel" style="max-width:760px;margin-bottom:20px">
+      <div class="panel platform-open-play-only" style="max-width:760px;margin-bottom:20px">
         <h4>⏰ Open Play Schedule</h4>
         <p style="color:var(--muted);font-size:.84rem;margin:8px 0 18px">Set the time window when open/drop-in play is available. Courts are open for walk-in players during these hours.</p>
 
@@ -2716,7 +2717,7 @@ tr:hover td { background: var(--bg2); }
       </div>
 
       <!-- OPEN PLAY RESERVATIONS -->
-      <div class="panel" style="max-width:980px;margin-bottom:20px">
+      <div class="panel platform-open-play-only" style="max-width:980px;margin-bottom:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
           <h4 style="margin:0">📋 Open Play Reservations</h4>
           <div style="display:flex;gap:8px;align-items:center">
@@ -3293,6 +3294,37 @@ tr:hover td { background: var(--bg2); }
     <div class="m-foot">
       <button class="btn btn-g" onclick="closeModal('pwModal')">Cancel</button>
       <button class="btn btn-p" id="pwSaveBtn" onclick="saveNewPassword()">🔑 Update Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOTP MFA SETUP / STEP-UP MODAL -->
+<div class="overlay" id="mfaModal" aria-hidden="true" inert hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mfaTitle" style="max-width:430px" tabindex="-1">
+    <div class="m-hd">
+      <div><h2 id="mfaTitle">TWO-STEP VERIFICATION</h2><p style="margin:4px 0 0;color:var(--muted);font-size:.76rem">Required only for viewing or deciding payment receipts.</p></div>
+      <button class="m-x" type="button" aria-label="Close" onclick="closeMfaModal()">&#10005;</button>
+    </div>
+    <div class="m-body">
+      <div id="mfaMessage" style="font-size:.82rem;line-height:1.55;color:var(--text2)">Checking authenticator status...</div>
+      <div id="mfaEnrollPanel" style="display:none;text-align:center;margin-top:14px">
+        <button class="btn btn-p" type="button" id="mfaEnrollBtn" onclick="beginMfaEnrollment()">Set up authenticator</button>
+        <div id="mfaQrWrap" style="display:none;margin-top:14px">
+          <img id="mfaQr" alt="Authenticator enrollment QR code" style="width:210px;max-width:80%;background:#fff;border-radius:10px;padding:8px" />
+          <p style="font-size:.74rem;color:var(--muted);margin:10px 0 4px">Scan with Google Authenticator, Microsoft Authenticator, 1Password, or another TOTP app.</p>
+          <div style="font-size:.68rem;color:var(--muted)">Manual key</div>
+          <code id="mfaSecret" style="display:block;word-break:break-all;margin-top:3px;color:var(--text)"></code>
+        </div>
+      </div>
+      <div id="mfaCodePanel" style="display:none;margin-top:16px">
+        <label class="fl" for="mfaCode">6-digit authenticator code</label>
+        <input class="fi" id="mfaCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" />
+      </div>
+      <div id="mfaError" style="display:none;margin-top:10px;color:var(--red);font-size:.76rem" role="alert"></div>
+    </div>
+    <div class="m-foot">
+      <button class="btn btn-g" type="button" onclick="closeMfaModal()">Close</button>
+      <button class="btn btn-p" type="button" id="mfaVerifyBtn" style="display:none" onclick="verifyMfaCode()">Verify</button>
     </div>
   </div>
 </div>
@@ -4112,7 +4144,7 @@ function receiptBadge(b){
   };
   let [c,bg,lbl] = map[s] || ['#888','var(--input)',s];
   if (s === 'rejected') lbl = displayFlags.length ? `Rejected: ${reason}` : 'Flagged earlier — review manually';
-  return `<div class="receipt-badge" style="color:${c};background:${bg}">${lbl}</div>`;
+  return `<div class="receipt-badge" style="color:${c};background:${bg}">${esc(lbl)}</div>`;
 }
 function duplicatePaymentRefBadge(b){
   if (!b?.duplicatePaymentRef) return '';
@@ -4121,7 +4153,7 @@ function duplicatePaymentRefBadge(b){
 }
 function receiptFlagChips(flags){
   if (!flags || !flags.length) return '';
-  return flags.map(f => `<span class="receipt-chip">${RECEIPT_FLAG_LABELS[f] || f}</span>`).join(' ');
+  return flags.map(f => `<span class="receipt-chip">${esc(RECEIPT_FLAG_LABELS[f] || f)}</span>`).join(' ');
 }
 function receiptDetailValue(value, fallback = '--'){
   if (value === null || value === undefined || value === '') return fallback;
@@ -4266,6 +4298,11 @@ function bookingDetailsButton(b){
 function bookingActionsHtml(b, canDelete){
   const grouped = Array.isArray(b.items) && b.items.length > 1;
   const actionRef = b.primaryRef || b.ref;
+  if (window.PB_PLATFORM_V1) {
+    const canCancel = !['cancelled', 'forfeited', 'completed'].includes(String(b.status || '').toLowerCase());
+    return `${bookingDetailsButton(b)}
+      ${canCancel ? `<button class="btn btn-d btn-sm" onclick="cancelPlatformBooking('${jsArg(actionRef)}')">Cancel</button>` : ''}`;
+  }
   const forfeited = b.status === 'forfeited' || b.paymentStatus === 'deposit_retained';
   const hasBalance = b.hostBooking && b.paymentStatus === 'downpayment_paid';
   return `${bookingDetailsButton(b)}
@@ -4284,6 +4321,7 @@ function bookingActionsHtml(b, canDelete){
     ${canDelete && !forfeited?`<button class="btn btn-d btn-sm" onclick="delBooking('${jsArg(actionRef)}')">Delete</button>`:''}`;
 }
 function bookingPayStateSelect(b){
+  if (window.PB_PLATFORM_V1) return payStatusBdg(b.paymentStatus || 'unpaid');
   const actionRef = b.primaryRef || b.ref;
   if (b.status === 'forfeited' || b.paymentStatus === 'deposit_retained') return payStatusBdg('deposit_retained');
   return `<select class="fi" style="padding:4px 7px;font-size:.76rem;width:auto" onchange="updatePaymentStatus('${jsArg(actionRef)}',this.value)">
@@ -4462,11 +4500,16 @@ let sess;
 /* ==============================================
    NAVIGATION
    ============================================== */
-const titles={dash:'Dashboard',bookings:'Bookings',deleted:'Deleted Bookings',payreview:'Payment Review',reports:'Reports',courts:'Courts',accounts:'Accounts',remittances:'Remittances',blocked:'Open Play',hosts:'Host Center',gamemgr:'Game Manager',maintenance:'Maintenance',payments:'Payments'};
+const titles={dash:'Dashboard',bookings:'Bookings',deleted:'Deleted Bookings',payreview:'Payment Review',reports:'Reports',courts:'Courts',accounts:'Accounts',remittances:'Remittances',blocked:'Blocked Dates',hosts:'Host Center',gamemgr:'Game Manager',maintenance:'Maintenance',payments:'Payments'};
 const SECTION_PERM={dash:'dashboard',bookings:'bookings',deleted:'owner_only',payreview:'payment_review',reports:'reports',courts:'courts',accounts:'host_accounts_view',remittances:'remittances',blocked:'open_play',hosts:'host_open_play',gamemgr:'open_play',maintenance:'maintenance',payments:'payments'};
 const SECTION_LOADERS={dash:renderDash,bookings:renderBookings,deleted:renderDeletedBookings,payreview:renderPaymentReview,reports:renderReport,courts:renderCourts,accounts:renderAccounts,remittances:renderRemittances,blocked:renderBlocked,hosts:renderHostCenter,gamemgr:renderGameManager,maintenance:renderMaintenance,payments:renderPaymentSettings};
+const PLATFORM_UNSUPPORTED_SECTIONS = new Set(['deleted','accounts','remittances','hosts','gamemgr','maintenance','payments']);
 let _curSection=null;
 async function goto(s){
+  if(window.PB_PLATFORM_V1 && PLATFORM_UNSUPPORTED_SECTIONS.has(s)){
+    toast('This module is not enabled on the protected tenant platform yet.','inf');
+    return;
+  }
   // Block navigation to sections the current role can't access
   const perm=SECTION_PERM[s];
   if(perm && sess && !Auth.can(perm, sess.role)){ toast('You do not have access to this section.','err'); return; }
@@ -4500,6 +4543,19 @@ function startAdminRealtime(){
       }catch(_){}
     },300);
   };
+  if(window.PB_PLATFORM_V1){
+    const tenantId=window.Auth?.getSession?.()?.tenantId;
+    if(!tenantId) return;
+    const filter=`tenant_id=eq.${tenantId}`;
+    _supabase.channel(`admin-rt-${tenantId}`)
+      .on('postgres_changes',{event:'*',schema:'public',table:'bookings',filter},rerender)
+      .on('postgres_changes',{event:'*',schema:'public',table:'booking_slots',filter},rerender)
+      .on('postgres_changes',{event:'*',schema:'public',table:'courts',filter},rerender)
+      .on('postgres_changes',{event:'*',schema:'public',table:'settings',filter},rerender)
+      .on('postgres_changes',{event:'*',schema:'public',table:'blocked_dates',filter},rerender)
+      .subscribe();
+    return;
+  }
   _supabase.channel('admin-rt')
     .on('postgres_changes',{event:'*',schema:'public',table:'bookings'},rerender)
     .on('postgres_changes',{event:'*',schema:'public',table:'deleted_booking_archive'},rerender)
@@ -4749,6 +4805,7 @@ function renderDashCharts(bookings) {
    ============================================== */
 let autoCompleteRan = false;
 async function autoCompleteBookings(bks) {
+  if (window.PB_PLATFORM_V1) { autoCompleteRan = true; return 0; }
   if (autoCompleteRan) return;
   const now = new Date();
   const toComplete = bks.filter(b => {
@@ -4863,7 +4920,7 @@ async function renderBookings(){
     return;
   }
   if (seq !== _bookingRenderSeq) return;
-  if (!_balanceProcessorStarted && !window.PB_USE_LOCAL_DATA) {
+  if (!_balanceProcessorStarted && !window.PB_USE_LOCAL_DATA && !window.PB_PLATFORM_V1) {
     _balanceProcessorStarted = true;
     DB.processHostBalanceDeadlines?.({ allowFailure: true }).then(result => {
       if (Number(result?.processed || 0) > 0 && _curSection === 'bookings') renderBookings();
@@ -5170,7 +5227,9 @@ function paymentReviewRow(item) {
 }
 
 async function renderPaymentReview() {
-  const [bookings, regs] = await Promise.all([DB.getBookings(), DB.getOpenPlayRegistrations()]);
+  const [bookings, regs] = window.PB_PLATFORM_V1
+    ? [await DB.getBookings(), []]
+    : await Promise.all([DB.getBookings(), DB.getOpenPlayRegistrations()]);
   const bookingItems = groupBookings(bookings.filter(b => b.email !== 'reserve@hold.internal' && isDigitalPayment(b.paymentMethod)))
     .map(b => ({
       type: 'booking',
@@ -5633,9 +5692,141 @@ async function updateStatus(ref, status) {
   }).catch(() => {});
 }
 
+async function cancelPlatformBooking(ref) {
+  if (!confirm(`Cancel booking ${ref}? The reserved slot will be released.`)) return;
+  try {
+    await updateStatus(ref, 'cancelled');
+  } catch (error) {
+    console.error('cancelPlatformBooking:', error);
+    toast(error?.message || 'Could not cancel the booking.', 'err');
+  }
+}
+
+let _mfaFactorId = null;
+let _mfaAfterSuccess = null;
+
+function setMfaError(message = '') {
+  const el = $('mfaError');
+  if (!el) return;
+  el.textContent = message;
+  el.style.display = message ? '' : 'none';
+}
+
+async function openMfaModal({ afterSuccess = null } = {}) {
+  _mfaAfterSuccess = typeof afterSuccess === 'function' ? afterSuccess : null;
+  _mfaFactorId = null;
+  setMfaError('');
+  $('mfaMessage').textContent = 'Checking authenticator status...';
+  $('mfaEnrollPanel').style.display = 'none';
+  $('mfaEnrollBtn').style.display = '';
+  $('mfaQrWrap').style.display = 'none';
+  $('mfaQr').removeAttribute('src');
+  $('mfaSecret').textContent = '';
+  $('mfaCodePanel').style.display = 'none';
+  $('mfaVerifyBtn').style.display = 'none';
+  const overlay = $('mfaModal');
+  overlay.hidden = false;
+  overlay.inert = false;
+  overlay.setAttribute('aria-hidden', 'false');
+  overlay.classList.add('show');
+  try {
+    const status = await Auth.getMfaStatus();
+    if (status.currentLevel === 'aal2') {
+      $('mfaMessage').textContent = 'Two-step verification is active for this session. Sensitive receipt actions are unlocked.';
+      return;
+    }
+    const verified = status.verifiedFactors[0];
+    if (verified) {
+      _mfaFactorId = verified.id;
+      $('mfaMessage').textContent = 'Enter the current code from your authenticator app to unlock receipt access.';
+      $('mfaCodePanel').style.display = '';
+      $('mfaVerifyBtn').style.display = '';
+      requestAnimationFrame(() => $('mfaCode')?.focus());
+      return;
+    }
+    $('mfaMessage').textContent = 'Protect payment receipts by linking an authenticator app. Password login will continue to open ordinary dashboard pages.';
+    $('mfaEnrollPanel').style.display = '';
+  } catch (error) {
+    setMfaError(error?.message || 'Could not check two-step verification.');
+  }
+}
+
+function closeMfaModal() {
+  const overlay = $('mfaModal');
+  if (!overlay) return;
+  overlay.classList.remove('show');
+  overlay.setAttribute('aria-hidden', 'true');
+  overlay.inert = true;
+  overlay.hidden = true;
+  if ($('mfaCode')) $('mfaCode').value = '';
+}
+
+async function beginMfaEnrollment() {
+  const button = $('mfaEnrollBtn');
+  if (button) { button.disabled = true; button.textContent = 'Creating secure QR...'; }
+  setMfaError('');
+  try {
+    const result = await Auth.startTotpEnrollment();
+    _mfaFactorId = result.factor.id;
+    if (!result.alreadyEnrolled) {
+      const qr = String(result.factor.totp?.qr_code || '');
+      if (!/^data:image\/(?:svg\+xml|png);/i.test(qr)) throw new Error('Authenticator QR format was not accepted.');
+      $('mfaQr').src = qr;
+      $('mfaSecret').textContent = String(result.factor.totp?.secret || '');
+      $('mfaQrWrap').style.display = '';
+    }
+    $('mfaMessage').textContent = result.alreadyEnrolled
+      ? 'Enter the current code from your authenticator app.'
+      : 'Scan the QR, then enter the 6-digit code to finish setup.';
+    $('mfaCodePanel').style.display = '';
+    $('mfaVerifyBtn').style.display = '';
+    if (button) button.style.display = 'none';
+    requestAnimationFrame(() => $('mfaCode')?.focus());
+  } catch (error) {
+    setMfaError(error?.message || 'Could not start authenticator setup.');
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Set up authenticator'; }
+  }
+}
+
+async function verifyMfaCode() {
+  const button = $('mfaVerifyBtn');
+  if (button) { button.disabled = true; button.textContent = 'Verifying...'; }
+  setMfaError('');
+  try {
+    await Auth.verifyTotpCode($('mfaCode')?.value, _mfaFactorId);
+    const continuation = _mfaAfterSuccess;
+    _mfaAfterSuccess = null;
+    closeMfaModal();
+    toast('Two-step verification complete.');
+    if (continuation) await continuation();
+  } catch (error) {
+    setMfaError(error?.message || 'The authenticator code was not accepted.');
+    $('mfaCode')?.select();
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Verify'; }
+  }
+}
+
+async function ensureReceiptMfa(afterSuccess) {
+  if (!window.PB_PLATFORM_V1) return true;
+  try {
+    await Auth.requireAal2();
+    return true;
+  } catch (error) {
+    if (!['MFA_CHALLENGE_REQUIRED', 'MFA_ENROLLMENT_REQUIRED'].includes(error?.code)) {
+      toast(error?.message || 'Could not verify receipt access.', 'err');
+      return false;
+    }
+    await openMfaModal({ afterSuccess });
+    return false;
+  }
+}
+
 let _verifyModalLastFocus = null;
 
 async function openVerifyModal(ref, { returnFocus = null } = {}) {
+  if (!(await ensureReceiptMfa(() => openVerifyModal(ref, { returnFocus })))) return;
   _verifyModalLastFocus = returnFocus || document.activeElement;
   const b = await getBookingGroupByRef(ref);
   if (!b) { toast('Booking not found.', 'err'); return; }
@@ -5744,6 +5935,7 @@ async function verifyAndConfirm() {
   const ref = $('verifyModal').dataset.ref;
   if (!ref) return;
   try {
+    if (!(await ensureReceiptMfa(() => verifyAndConfirm()))) return;
     const bkForPay = await getBookingGroupByRef(ref);
     if (isDigitalPayment(bkForPay?.paymentMethod) && !bkForPay?.receiptImageUrl) {
       toast('Cannot confirm: no receipt image is attached to this digital payment.', 'err');
@@ -5767,7 +5959,7 @@ async function verifyAndConfirm() {
       ]);
     }).catch(() => {});
   } catch(e) {
-    toast('Failed to confirm booking.', 'err');
+    toast(e?.message || 'Failed to confirm booking.', 'err');
   }
 }
 
@@ -5786,6 +5978,7 @@ async function resendConfirmationEmail(ref) {
 async function rejectPayment() {
   const ref = $('verifyModal').dataset.ref;
   if (!ref) return;
+  if (!(await ensureReceiptMfa(() => rejectPayment()))) return;
   if (!confirm(`Cancel booking ${ref}? This cannot be undone.`)) return;
   try {
     await updateBookingGroupByRef(ref, { status: 'cancelled', paymentStatus: 'rejected' });
@@ -5796,7 +5989,7 @@ async function rejectPayment() {
     renderDash();
     notifyBookingUpdateSafe(ref, 'payment_rejected', 'Payment marked not received by admin.');
   } catch(e) {
-    toast('Failed to cancel booking.', 'err');
+    toast(e?.message || 'Failed to cancel booking.', 'err');
   }
 }
 
@@ -7014,9 +7207,11 @@ async function exportReportCSV(){
    ============================================== */
 async function renderCourts(){
   await renderHours();
-  await renderMaintRateSettings();
   await loadPricingTiers();
-  await renderPaymentSettings();
+  if (!window.PB_PLATFORM_V1) {
+    await renderMaintRateSettings();
+    await renderPaymentSettings();
+  }
   const courts=await DB.getCourts();
   $('courtBody').innerHTML=courts.map(c=>`<tr>
     <td data-label="Name">
@@ -7030,7 +7225,7 @@ async function renderCourts(){
     <td data-label="Actions"><div style="display:flex;gap:6px">
       <button class="btn btn-g btn-sm" onclick="openCourtModal('${jsArg(c.id)}')">✏️ Edit</button>
       <button class="btn btn-sm" style="background:${c.blocked?'rgba(var(--green-rgb),.12);color:var(--green)':'rgba(var(--yellow-rgb),.12);color:var(--yellow)'}" onclick="toggleBlock('${jsArg(c.id)}')">${c.blocked?'✅ Unblock':'🔒 Block'}</button>
-      <button class="btn btn-d btn-sm" onclick="delCourt('${jsArg(c.id)}')">🗑️</button>
+      ${window.PB_PLATFORM_V1 ? '' : `<button class="btn btn-d btn-sm" onclick="delCourt('${jsArg(c.id)}')">🗑️</button>`}
     </div></td>
   </tr>`).join('');
 }
@@ -9501,6 +9696,13 @@ function opRenderDateList() {
 }
 
 async function renderBlocked(){
+  if (window.PB_PLATFORM_V1) {
+    const dates = await DB.getBlockedDates();
+    $('blkList').innerHTML = dates.length === 0
+      ? '<p style="color:var(--muted);font-style:italic">No blocked dates.</p>'
+      : dates.map(d => `<div class="blk-item"><span>ðŸ“… ${fmtD(d)}</span><button class="btn btn-d btn-sm" onclick="removeBlocked('${d}')">Remove</button></div>`).join('');
+    return;
+  }
   // Load open play settings
   const [settings, courts] = await Promise.all([DB.getSettings(), DB.getCourts()]);
   const cfg = settings.open_play_config ? JSON.parse(settings.open_play_config) : { enabled: true, start: 17, end: 24, days: [1,2,3,4,5,6], fee: 100, maxPlayers: 40 };
@@ -10739,6 +10941,10 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   $('uRole').className = 'role-bdg ' + (ROLE_CLASSES[role] || 'r-staff');
 
   applyRoleVisibility(role);
+  applyPlatformVisibility();
+  $('mfaCode')?.addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); verifyMfaCode(); }
+  });
 
   // Modal close on overlay click
   document.querySelectorAll('.overlay').forEach(ov=>ov.addEventListener('click',e=>{
@@ -10746,6 +10952,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     if(ov.id==='hostAccountModal') closeHostAccountDetails();
     else if(ov.id==='bookingDetailsModal') closeBookingDetails();
     else if(ov.id==='verifyModal') closeVerifyModal();
+    else if(ov.id==='mfaModal') closeMfaModal();
     else if(['rmPrepareModal','rmPayModal','rmReviewModal','rmDetailModal','rmCancelModal'].includes(ov.id)) closeRemittanceModal(ov.id);
     else ov.classList.remove('show');
   }));
@@ -10788,6 +10995,33 @@ function applyRoleVisibility(role) {
   document.querySelectorAll('[data-perm]').forEach(el => {
     el.style.display = allowed.includes(el.dataset.perm) ? '' : 'none';
   });
+}
+
+function applyPlatformVisibility() {
+  if (!window.PB_PLATFORM_V1) return;
+  document.querySelectorAll('.nav-item[data-s]').forEach(item => {
+    if (PLATFORM_UNSUPPORTED_SECTIONS.has(item.dataset.s)) item.style.display = 'none';
+  });
+  document.querySelectorAll('.sb-section').forEach(section => {
+    const visibleItems = [...section.querySelectorAll('.nav-item')]
+      .some(item => item.style.display !== 'none');
+    if (!visibleItems && section.querySelector('.nav-item')) section.style.display = 'none';
+  });
+  document.querySelectorAll('.platform-open-play-only').forEach(el => { el.style.display = 'none'; });
+  document.querySelectorAll('[onclick*="openNewBookingModal"], [onclick*="goto(\'payments\')"]').forEach(el => {
+    el.style.display = 'none';
+  });
+  const hostBookingTab = document.querySelector('[data-booking-type="host"]');
+  if (hostBookingTab) hostBookingTab.style.display = 'none';
+  const openPlayType = document.querySelector('#prType option[value="open_play"]');
+  if (openPlayType) openPlayType.remove();
+  const blockedHeading = document.querySelector('#sec-blocked .toolbar h2');
+  if (blockedHeading) blockedHeading.textContent = 'BLOCKED DATES';
+  document.querySelectorAll('[onclick="goto(\'blocked\')"]').forEach(action => {
+    if (!action.classList.contains('nav-item')) action.textContent = 'Blocked Dates';
+  });
+  if ($('maintFeePanel')) $('maintFeePanel').style.display = 'none';
+  if ($('addCourtBtn')) $('addCourtBtn').style.display = 'none';
 }
 </script>
 <!-- ============================================================
@@ -11062,7 +11296,7 @@ async function checkAgreementGate(session) {
 </script>
 
 <script src="supabase.min.js"></script>
-<script src="tenant-config.js?v=20260718-auth-activation-v1"></script>
-<script src="supabase-config.js?v=20260718-auth-activation-v1"></script>
+<script src="tenant-config.js?v=20260718-platform-live-v2"></script>
+<script src="supabase-config.js?v=20260718-platform-live-v2"></script>
 </body>
 </html>

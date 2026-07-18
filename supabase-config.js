@@ -10,6 +10,10 @@ const PB_RUNTIME_CONFIG = window.PB_TENANT_CONFIG || {};
 const PB_TENANT_SLUG = String(PB_RUNTIME_CONFIG.tenantSlug || 'backyard-pickle');
 const PB_AUTH_ENABLED = PB_RUNTIME_CONFIG.authEnabled === true;
 const PB_BACKEND_ENABLED = PB_RUNTIME_CONFIG.backendEnabled === true;
+// The schema marker describes the contract; the rollout flag authorizes data
+// access. Keeping both checks here prevents auth-only previews from touching
+// production tenant tables or public booking RPCs.
+const PB_PLATFORM_V1 = PB_BACKEND_ENABLED && PB_RUNTIME_CONFIG.schemaVersion === 'multi-tenant-v1';
 const PB_SUPABASE_CONNECTION_ENABLED = PB_AUTH_ENABLED || PB_BACKEND_ENABLED;
 const SUPABASE_URL = PB_SUPABASE_CONNECTION_ENABLED
   ? String(PB_RUNTIME_CONFIG.supabaseUrl || '')
@@ -31,6 +35,7 @@ window.PB_PUBLIC_BOOKING_ENABLED =
 window.PB_HOST_PORTAL_ENABLED =
   PB_RUNTIME_CONFIG.hostPortalEnabled === true && PB_SUPABASE_CONFIGURED;
 window.PB_TENANT_SLUG = PB_TENANT_SLUG;
+window.PB_PLATFORM_V1 = PB_PLATFORM_V1;
 
 const PB_REQUEST_TIMEOUT_MS = 45000;
 const PB_RECEIPT_TIMEOUT_MS = 90000;
@@ -92,6 +97,12 @@ window._supabase = _sb;
 
 const PB_IS_LOCAL_HOST = ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
 const PB_DATA_MODE_KEY = 'backyard_pickle_data_mode';
+
+function _pbTenantHostname() {
+  return PB_IS_LOCAL_HOST
+    ? String(PB_RUNTIME_CONFIG.productionHosts?.[0] || window.location.hostname)
+    : window.location.hostname;
+}
 
 if (PB_IS_LOCAL_HOST) {
   const params = new URLSearchParams(location.search);
@@ -164,8 +175,328 @@ function _pbClearFastCache(scopes = []) {
   }
 }
 
+async function _pbPlatformBootstrap() {
+  return _pbCached('platformBootstrap', {}, PB_FAST_CACHE_MS.settings, async () => {
+    const { data, error } = await _sb.rpc('get_public_tenant_bootstrap', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
+    });
+    if (error) throw error;
+    if (!data?.tenant || !Array.isArray(data?.courts)) {
+      throw new Error('This booking website is not configured for the current domain.');
+    }
+    return data;
+  });
+}
+
+async function _pbPlatformAvailability(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return null;
+  return _pbCached('platformAvailability', { date }, PB_FAST_CACHE_MS.bookings, async () => {
+    const { data, error } = await _sb.rpc('get_public_availability', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
+      p_date: date,
+    });
+    if (error) throw error;
+    if (!data || data.tenantSlug !== PB_TENANT_SLUG) {
+      throw new Error('Availability is not configured for the current domain.');
+    }
+    return data;
+  });
+}
+
+function _pbClockHour(value, endOfDay = false) {
+  const match = /^(\d{2}):(\d{2})/.exec(String(value || ''));
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || minute !== 0) return null;
+  if (endOfDay && hour === 0) return 24;
+  return hour;
+}
+
+function _pbPlatformCourtToLegacy(court) {
+  const regular = court?.pricingConfig?.regular || {};
+  const bands = Array.isArray(regular.bands) ? regular.bands : [];
+  const rateSchedule = bands.map(band => ({
+    from: _pbClockHour(band.start),
+    to: String(band.end) === '24:00' ? 24 : _pbClockHour(band.end, true),
+    rate: Number(band.hourlyRate),
+  })).filter(band => Number.isInteger(band.from) && Number.isInteger(band.to) && Number.isFinite(band.rate));
+  const surface = String(court?.publicConfig?.surface || '').trim();
+  return {
+    id: court.id,
+    slug: court.slug,
+    name: court.name,
+    desc: court.description || '',
+    rate: rateSchedule[0]?.rate || Number(regular.hourlyRate || 0),
+    blocked: false,
+    feats: surface ? [surface] : [],
+    photo: court?.publicConfig?.photoUrl || '',
+    rateSchedule,
+    opensAt: court.opensAt,
+    closesAt: court.closesAt,
+    pricingConfig: court.pricingConfig || {},
+    publicConfig: court.publicConfig || {},
+  };
+}
+
+function _pbPlatformRawCourtToLegacy(row) {
+  return _pbPlatformCourtToLegacy({
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    description: row.description,
+    opensAt: String(row.opens_at || '').slice(0, 5),
+    closesAt: String(row.closes_at || '').slice(0, 5),
+    pricingConfig: row.pricing_config || {},
+    publicConfig: row.public_config || {},
+  });
+}
+
+async function _pbAuthenticatedSession() {
+  const { data } = await _sb.auth.getSession();
+  return data?.session || null;
+}
+
+function _pbZonedHour(timestamp, timeZone) {
+  if (!timestamp) return null;
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timeZone || 'Asia/Manila',
+      hour: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date(timestamp));
+    const hour = Number(parts.find(part => part.type === 'hour')?.value);
+    return Number.isInteger(hour) ? hour : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function _pbPlatformBookingToLegacy(row, courtMap, timeZone) {
+  const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+  const bookingSlots = Array.isArray(row.booking_slots) ? [...row.booking_slots] : [];
+  const slots = bookingSlots
+    .filter(slot => ['held', 'confirmed'].includes(slot.status))
+    .map(slot => _pbZonedHour(slot.starts_at, timeZone))
+    .filter(Number.isInteger)
+    .sort((a, b) => a - b);
+  const fallbackStart = _pbZonedHour(row.starts_at, timeZone);
+  const duration = Math.max(1, Math.round((new Date(row.ends_at) - new Date(row.starts_at)) / 3600000));
+  if (!slots.length && Number.isInteger(fallbackStart)) {
+    for (let index = 0; index < duration; index++) slots.push((fallbackStart + index) % 24);
+  }
+  const status = {
+    pending_payment: 'verifying',
+    payment_review: 'pending',
+    confirmed: 'confirmed',
+    cancelled: 'cancelled',
+    completed: 'completed',
+    expired: 'forfeited',
+  }[row.status] || row.status;
+  const paymentStatus = {
+    unpaid: 'unpaid',
+    pending: 'for_verification',
+    paid: 'paid',
+    refunded: 'refunded',
+    rejected: 'rejected',
+  }[row.payment_status] || row.payment_status;
+  const court = courtMap.get(String(row.court_id));
+  const receipts = Array.isArray(row.receipt_verifications)
+    ? [...row.receipt_verifications].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+    : [];
+  const receipt = receipts[0] || null;
+  const paymentSessions = Array.isArray(row.payment_sessions)
+    ? [...row.payment_sessions].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+    : [];
+  const paymentSession = paymentSessions[0] || null;
+  const paymentPayload = paymentSession?.provider_payload && typeof paymentSession.provider_payload === 'object'
+    ? paymentSession.provider_payload
+    : {};
+  return {
+    id: row.id,
+    ref: row.reference,
+    fullName: row.customer_name,
+    contactNumber: row.customer_phone,
+    email: row.customer_email,
+    courtId: row.court_id,
+    courtName: court?.name || 'Court',
+    date: row.local_booking_date,
+    slots,
+    startTime: slots.length ? _fmtBookingHour(slots[0]) : '',
+    endTime: slots.length ? _fmtBookingHour(slots[slots.length - 1] + 1) : '',
+    timeLabel: _bookingSlotsTimeLabel(slots),
+    duration,
+    rate: Number(row.subtotal_amount || 0) / duration,
+    total: Number(row.total_amount || 0),
+    courtFee: Number(row.subtotal_amount || 0),
+    serviceFee: Number(row.service_fee_amount || 0),
+    downpayment: metadata.fullPaymentOnly ? Number(row.total_amount || 0) : null,
+    bookingType: row.booking_type || 'regular',
+    eventType: metadata.eventType || null,
+    eventGuestCount: Number(row.guest_count || 1),
+    eventSetupNotes: metadata.notes || null,
+    paymentMethod: (() => {
+      const code = String(metadata.paymentMethod || paymentPayload.paymentMethod || '').toLowerCase();
+      return code === 'bdo' ? 'bdopay' : (code || null);
+    })(),
+    gcashRef: receipt?.payment_reference || paymentPayload.submittedReference || null,
+    paymentStatus,
+    receiptVerificationId: receipt?.id || null,
+    // The source image stays private. This sentinel only tells the dashboard
+    // that an authenticated, short-lived viewing URL can be requested.
+    receiptImageUrl: receipt?.storage_path ? 'protected' : null,
+    receiptStatus: receipt?.status || 'none',
+    receiptFlags: receipt?.flags || [],
+    receiptExtracted: receipt?.extracted_data || null,
+    receiptConfidence: receipt?.confidence == null ? null : Number(receipt.confidence),
+    receiptVerifiedAt: receipt?.reviewed_at || receipt?.verified_at || null,
+    status,
+    expiresAt: row.expires_at || null,
+    createdAt: row.created_at,
+  };
+}
+
+function _pbPlatformSettingsToLegacy(bootstrap) {
+  const settings = { ...(bootstrap?.settings || {}) };
+  const court = Array.isArray(bootstrap?.courts) ? bootstrap.courts[0] : null;
+  if (court) {
+    const legacyCourt = _pbPlatformCourtToLegacy(court);
+    settings.open_hour = String(_pbClockHour(court.opensAt) ?? 6);
+    settings.close_hour = String(
+      String(court.closesAt || '').startsWith('00:00')
+        ? 24
+        : (_pbClockHour(court.closesAt, true) ?? 24)
+    );
+    settings.pricing_tiers = JSON.stringify(legacyCourt.rateSchedule);
+  }
+  const paymentMode = settings['booking.payment_mode'] || bootstrap?.tenant?.publicConfig?.paymentAcceptanceMode;
+  if (paymentMode) settings.payment_acceptance_mode = paymentMode;
+
+  // Payment options are opt-in on the public platform. Missing destination
+  // settings must never render placeholder accounts as payable methods.
+  const paymentConfigs = Array.isArray(bootstrap?.paymentMethods) ? bootstrap.paymentMethods : [];
+  const paymentCodeAliases = {};
+  for (const method of paymentConfigs) {
+    const backendCode = String(method.code || '').toLowerCase();
+    const uiCode = backendCode === 'bdo' ? 'bdopay' : backendCode;
+    if (uiCode) paymentCodeAliases[uiCode] = backendCode;
+  }
+  window.PB_PAYMENT_METHOD_CODES = Object.freeze(paymentCodeAliases);
+  const publicMethods = paymentConfigs.length
+    ? paymentConfigs
+      .map(method => String(method.code || '').toLowerCase())
+      .map(code => code === 'bdo' ? 'bdopay' : code)
+      .filter(Boolean)
+    : Array.isArray(settings['payment.public_methods'])
+      ? settings['payment.public_methods'].map(value => String(value).toLowerCase())
+      : ['cash', 'gcash', 'bdopay', 'maya', 'bpi', 'gotyme', 'pnb']
+        .filter(method => settings[`payment_method_${method}`] === '1');
+  for (const method of ['cash', 'gcash', 'bdopay', 'maya', 'bpi', 'gotyme', 'pnb']) {
+    settings[`payment_method_${method}`] = publicMethods.includes(method) ? '1' : '0';
+  }
+  const configFor = (...codes) => paymentConfigs.find(method => codes.includes(String(method.code || '').toLowerCase()));
+  const gcash = configFor('gcash', 'bdopay', 'bdo', 'maya', 'bpi');
+  const gotyme = configFor('gotyme');
+  const pnb = configFor('pnb');
+  if (gcash) {
+    settings.gcash_merchant_number = gcash.accountReference || '';
+    settings.gcash_merchant_name = gcash.accountName || bootstrap?.tenant?.name || '';
+    settings.gcash_qr_image = gcash.qrImageUrl || '';
+  }
+  if (gotyme) {
+    settings.gotyme_merchant_number = gotyme.accountReference || '';
+    settings.gotyme_merchant_name = gotyme.accountName || bootstrap?.tenant?.name || '';
+    settings.gotyme_qr_image = gotyme.qrImageUrl || '';
+  }
+  if (pnb) {
+    settings.pnb_merchant_number = pnb.accountReference || '';
+    settings.pnb_merchant_name = pnb.accountName || bootstrap?.tenant?.name || '';
+    settings.pnb_qr_image = pnb.qrImageUrl || '';
+  }
+  return settings;
+}
+
+function _pbLocalIntervalHours(startsAt, endsAt, targetDate) {
+  const startText = String(startsAt || '');
+  const endText = String(endsAt || '');
+  const startDate = startText.slice(0, 10);
+  const endDate = endText.slice(0, 10);
+  if (startDate !== targetDate) return [];
+  const startHour = Number(startText.slice(11, 13));
+  let endHour = Number(endText.slice(11, 13));
+  if (endDate > startDate && endHour === 0) endHour = 24;
+  if (!Number.isInteger(startHour) || !Number.isInteger(endHour) || endHour <= startHour) return [];
+  return Array.from({ length: endHour - startHour }, (_, index) => startHour + index);
+}
+
+function _pbPlatformAvailabilityToLegacyBookings(availability, bootstrap) {
+  if (!availability) return [];
+  const date = availability.date;
+  const courts = Array.isArray(availability.courts) ? availability.courts : [];
+  const courtConfig = new Map((bootstrap?.courts || []).map(court => [String(court.id), court]));
+  const rows = [];
+
+  for (const court of courts) {
+    for (const interval of (court.unavailable || [])) {
+      const slots = _pbLocalIntervalHours(interval.startsAt, interval.endsAt, date);
+      if (!slots.length) continue;
+      rows.push({
+        ref: `availability-${court.id}-${interval.startsAt}`,
+        courtId: court.id,
+        courtName: court.name,
+        date,
+        slots,
+        status: 'confirmed',
+        paymentStatus: 'paid',
+        createdAt: null,
+      });
+    }
+  }
+
+  for (const block of (availability.blockedDates || [])) {
+    const targetCourts = block.courtId
+      ? courts.filter(court => String(court.id) === String(block.courtId))
+      : courts;
+    for (const court of targetCourts) {
+      const config = courtConfig.get(String(court.id)) || {};
+      let slots = _pbLocalIntervalHours(block.startsAt, block.endsAt, date);
+      if (!block.startsAt && !block.endsAt) {
+        const open = _pbClockHour(config.opensAt) ?? 6;
+        const close = String(config.closesAt || '').startsWith('00:00')
+          ? 24
+          : (_pbClockHour(config.closesAt, true) ?? 24);
+        slots = Array.from({ length: Math.max(0, close - open) }, (_, index) => open + index);
+      }
+      if (!slots.length) continue;
+      rows.push({
+        ref: `closure-${court.id}-${date}-${slots[0]}`,
+        courtId: court.id,
+        courtName: court.name,
+        date,
+        slots,
+        status: 'maintenance',
+        paymentStatus: 'unpaid',
+        publicLabel: block.label || 'Unavailable',
+        createdAt: null,
+      });
+    }
+  }
+  return rows;
+}
+
 function _safeJsonParse(v) {
   try { return JSON.parse(v); } catch(_) { return null; }
+}
+
+function _pbApiErrorMessage(payload, rawText = '', fallback = 'Request failed') {
+  if (payload?.error && typeof payload.error === 'object' && payload.error.message) {
+    return String(payload.error.message);
+  }
+  if (typeof payload?.error === 'string' && payload.error.trim()) return payload.error;
+  if (typeof payload?.message === 'string' && payload.message.trim()) return payload.message;
+  return String(rawText || fallback);
 }
 
 function _pbFileToDataUrl(file) {
@@ -181,6 +512,8 @@ function _pbFileToDataUrl(file) {
 
 async function _pbPrepareReceiptImage(file) {
   if (!file) throw new Error('Receipt screenshot is required.');
+  const maxReceiptBytes = 8 * 1024 * 1024;
+  if (Number(file.size || 0) > maxReceiptBytes) throw new Error('The receipt image must be 8 MB or smaller.');
   const rawType = String(file.type || '').toLowerCase();
   const type = rawType === 'image/jpg' ? 'image/jpeg' : rawType;
   const directlySupported = ['image/jpeg', 'image/png', 'image/webp'].includes(type);
@@ -219,7 +552,9 @@ async function _pbPrepareReceiptImage(file) {
     const encode = quality => new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
     let encoded = await encode(0.84);
     if (encoded?.size > targetBytes) encoded = await encode(0.72);
-    return encoded?.size ? encoded : file;
+    const output = encoded?.size ? encoded : file;
+    if (Number(output.size || 0) > maxReceiptBytes) throw new Error('The receipt image must be 8 MB or smaller.');
+    return output;
   } catch (_) {
     return file;
   } finally {
@@ -318,7 +653,7 @@ async function _invokeEdgeFunction(name, payload = {}, { allowFailure = false, p
   const authHeader = accessToken ? `Bearer ${accessToken}` : `Bearer ${SUPABASE_ANON_KEY}`;
 
   try {
-    const res = await fetch(fnUrl, {
+    const res = await _pbFetchWithTimeout(fnUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -329,13 +664,21 @@ async function _invokeEdgeFunction(name, payload = {}, { allowFailure = false, p
     });
     const txt = await res.text();
     const json = _safeJsonParse(txt) || {};
-    if (!res.ok) throw new Error(json.error || txt || `HTTP ${res.status}`);
+    if (!res.ok) {
+      const failure = new Error(_pbApiErrorMessage(json, txt, `HTTP ${res.status}`));
+      failure.code = json?.error?.code || null;
+      failure.httpStatus = res.status;
+      throw failure;
+    }
     return json;
   } catch (fallbackErr) {
     const fallbackReason = _extractFnError(fallbackErr, 'Fallback call failed');
     const reason = error ? `${_extractFnError(error, 'Function invoke failed')}. ${fallbackReason}` : fallbackReason;
     if (allowFailure) return { ok: false, error: reason };
-    throw new Error(reason);
+    const failure = new Error(reason);
+    failure.code = fallbackErr?.code || null;
+    failure.httpStatus = fallbackErr?.httpStatus || null;
+    throw failure;
   }
 }
 
@@ -821,6 +1164,22 @@ window.DB = {
 
   // ---- COURTS ----
   async getCourts() {
+    if (PB_PLATFORM_V1) {
+      return _pbCached('courts', {}, PB_FAST_CACHE_MS.courts, async () => {
+        const session = await _pbAuthenticatedSession();
+        const tenantId = window.Auth?.getSession?.()?.tenantId;
+        if (session && tenantId) {
+          const { data, error } = await _sb.from('courts')
+            .select('*')
+            .eq('tenant_id', tenantId)
+            .order('sort_order');
+          if (error) throw error;
+          return (data || []).map(_pbPlatformRawCourtToLegacy);
+        }
+        const bootstrap = await _pbPlatformBootstrap();
+        return bootstrap.courts.map(_pbPlatformCourtToLegacy);
+      });
+    }
     return _pbCached('courts', {}, PB_FAST_CACHE_MS.courts, async () => {
       const { data, error } = await _sb.from('courts').select('*').order('id');
       if (error) { console.error('getCourts:', error); return []; }
@@ -829,12 +1188,69 @@ window.DB = {
   },
 
   async saveCourt(court) {
+    if (PB_PLATFORM_V1) {
+      const tenantId = window.Auth?.getSession?.()?.tenantId;
+      if (!tenantId) throw new Error('Your tenant session is no longer available. Please sign in again.');
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(court.id || ''));
+      let existing = null;
+      if (isUuid) {
+        const result = await _sb.from('courts').select('*')
+          .eq('tenant_id', tenantId).eq('id', court.id).maybeSingle();
+        if (result.error) throw result.error;
+        existing = result.data;
+      }
+      const bands = Array.isArray(court.rateSchedule) && court.rateSchedule.length
+        ? court.rateSchedule
+        : [{ from: 6, to: 24, rate: Number(court.rate || 0) }];
+      const pricingConfig = {
+        ...(existing?.pricing_config || court.pricingConfig || {}),
+        regular: {
+          ...(existing?.pricing_config?.regular || court.pricingConfig?.regular || {}),
+          bands: bands.map(band => ({
+            start: `${String(Number(band.from)).padStart(2, '0')}:00`,
+            end: Number(band.to) === 24 ? '24:00' : `${String(Number(band.to)).padStart(2, '0')}:00`,
+            hourlyRate: Number(band.rate),
+          })),
+        },
+      };
+      const row = {
+        tenant_id: tenantId,
+        slug: existing?.slug || court.slug || String(court.name || 'court')
+          .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        name: court.name,
+        description: court.desc || null,
+        status: court.blocked ? 'maintenance' : 'active',
+        sort_order: existing?.sort_order ?? 0,
+        opens_at: court.opensAt || existing?.opens_at || '06:00',
+        closes_at: court.closesAt || existing?.closes_at || '00:00',
+        currency: existing?.currency || 'PHP',
+        pricing_config: pricingConfig,
+        public_config: {
+          ...(existing?.public_config || court.publicConfig || {}),
+          photoUrl: court.photo || null,
+          surface: court.feats?.[0] || existing?.public_config?.surface || 'Outdoor',
+        },
+      };
+      if (isUuid) row.id = court.id;
+      const { error } = await _sb.from('courts').upsert(row, { onConflict: 'id' });
+      if (error) throw error;
+      _pbClearFastCache(['courts', 'settings', 'platformBootstrap']);
+      return;
+    }
     const { error } = await _sb.from('courts').upsert(courtToRow(court));
     if (error) { console.error('saveCourt:', error); throw error; }
     _pbClearFastCache(['courts']);
   },
 
   async deleteCourt(id) {
+    if (PB_PLATFORM_V1) {
+      const tenantId = window.Auth?.getSession?.()?.tenantId;
+      if (!tenantId) throw new Error('Your tenant session is no longer available. Please sign in again.');
+      const { error } = await _sb.from('courts').delete().eq('tenant_id', tenantId).eq('id', id);
+      if (error) throw error;
+      _pbClearFastCache(['courts', 'settings', 'platformBootstrap']);
+      return;
+    }
     const { error } = await _sb.from('courts').delete().eq('id', id);
     if (error) console.error('deleteCourt:', error);
     _pbClearFastCache(['courts']);
@@ -843,6 +1259,41 @@ window.DB = {
   // ---- BOOKINGS ----
   async getBookings(filters = {}) {
     const opts = filters || {};
+    if (PB_PLATFORM_V1) {
+      return _pbCached('bookings', opts, PB_FAST_CACHE_MS.bookings, async () => {
+        const session = await _pbAuthenticatedSession();
+        const tenantId = window.Auth?.getSession?.()?.tenantId;
+        if (!session || !tenantId) {
+          if (!opts.date) return [];
+          const [availability, bootstrap] = await Promise.all([
+            _pbPlatformAvailability(opts.date),
+            _pbPlatformBootstrap(),
+          ]);
+          return _pbPlatformAvailabilityToLegacyBookings(availability, bootstrap)
+            .filter(row => !opts.courtId || String(row.courtId) === String(opts.courtId));
+        }
+
+        let query = _sb.from('bookings')
+          .select('*, booking_slots(*), receipt_verifications(*), payment_sessions(*)')
+          .eq('tenant_id', tenantId)
+          .order('created_at', { ascending: false });
+        if (opts.date) query = query.eq('local_booking_date', opts.date);
+        if (opts.courtId) query = query.eq('court_id', String(opts.courtId));
+        if (opts.activeOnly) query = query.not('status', 'in', '(cancelled,expired)');
+        const [{ data, error }, courts, bootstrap] = await Promise.all([
+          query,
+          this.getCourts(),
+          _pbPlatformBootstrap(),
+        ]);
+        if (error) throw error;
+        const courtMap = new Map(courts.map(court => [String(court.id), court]));
+        return (data || []).map(row => _pbPlatformBookingToLegacy(
+          row,
+          courtMap,
+          bootstrap?.tenant?.timezone || 'Asia/Manila'
+        ));
+      });
+    }
     return _pbCached('bookings', opts, PB_FAST_CACHE_MS.bookings, async () => {
       let query = _sb.from('bookings').select('*').order('created_at', { ascending: false });
       if (opts.date) query = query.eq('date', opts.date);
@@ -862,6 +1313,11 @@ window.DB = {
   },
 
   async addBooking(booking) {
+    if (PB_PLATFORM_V1) {
+      const error = new Error('Direct booking writes are disabled. Use the protected booking service.');
+      error.code = 'PLATFORM_BOOKING_API_REQUIRED';
+      throw error;
+    }
     // Check for slot conflicts before inserting
     const { data: existing } = await _sb
       .from('bookings')
@@ -885,12 +1341,70 @@ window.DB = {
   },
 
   async getBookingByRef(ref) {
+    if (PB_PLATFORM_V1) {
+      const session = await _pbAuthenticatedSession();
+      const tenantId = window.Auth?.getSession?.()?.tenantId;
+      if (!session || !tenantId) return null;
+      const { data, error } = await _sb.from('bookings')
+        .select('*, booking_slots(*), receipt_verifications(*), payment_sessions(*)')
+        .eq('tenant_id', tenantId)
+        .eq('reference', String(ref || '').toUpperCase())
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      const [courts, bootstrap] = await Promise.all([this.getCourts(), _pbPlatformBootstrap()]);
+      return _pbPlatformBookingToLegacy(
+        data,
+        new Map(courts.map(court => [String(court.id), court])),
+        bootstrap?.tenant?.timezone || 'Asia/Manila'
+      );
+    }
     const { data, error } = await _sb.from('bookings').select('*').eq('ref', ref).single();
     if (error) { console.error('getBookingByRef:', error); return null; }
     return rowToBooking(data);
   },
 
   async updateBooking(ref, updates) {
+    if (PB_PLATFORM_V1) {
+      const booking = await this.getBookingByRef(ref);
+      if (!booking?.id) throw new Error('Booking not found or no longer accessible.');
+      const nextStatus = String(updates?.status || '').toLowerCase();
+      const nextPayment = String(updates?.paymentStatus || '').toLowerCase();
+      const decision = ['confirmed', 'paid'].includes(nextStatus) || ['paid', 'downpayment_paid'].includes(nextPayment)
+        ? 'approve'
+        : ['rejected'].includes(nextStatus) || nextPayment === 'rejected'
+          ? 'reject'
+          : null;
+      if (decision && booking.receiptVerificationId) {
+        await window.Auth.requireAal2();
+        const reviewNote = String(updates?.reviewNote || updates?.forfeitureReason || '').trim();
+        const data = await _invokeEdgeFunction(
+          `review-payment-receipt?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+          {
+            tenantSlug: PB_TENANT_SLUG,
+            verificationId: booking.receiptVerificationId,
+            decision,
+            note: reviewNote || null,
+          },
+          { preferDirect: true }
+        );
+        if (!data?.ok) throw new Error(data?.message || data?.error || 'Receipt review failed.');
+        _pbClearFastCache(['bookings', 'platformAvailability']);
+        return data;
+      }
+      if (['cancelled', 'forfeited', 'expired'].includes(nextStatus)) {
+        const { data, error } = await _sb.rpc('cancel_tenant_booking', {
+          p_booking_id: booking.id,
+          p_reason: String(updates?.forfeitureReason || updates?.reason || 'Cancelled by dashboard operator'),
+        });
+        if (error) throw error;
+        _pbClearFastCache(['bookings', 'platformAvailability']);
+        return data;
+      }
+      const error = new Error('This booking change is not supported by the protected platform workflow.');
+      error.code = 'PLATFORM_BOOKING_CHANGE_NOT_SUPPORTED';
+      throw error;
+    }
     // Map only the fields provided (camelCase → snake_case)
     const row = {};
     if (updates.status    !== undefined) row.status = updates.status;
@@ -962,12 +1476,22 @@ window.DB = {
   },
 
   async deleteBooking(ref) {
+    if (PB_PLATFORM_V1) {
+      return this.updateBooking(ref, {
+        status: 'cancelled',
+        reason: 'Cancelled from dashboard',
+      });
+    }
     const { error } = await _sb.from('bookings').delete().eq('ref', ref);
     if (error) { console.error('deleteBooking:', error); throw error; }
     _pbClearFastCache(['bookings']);
   },
 
   async voidDeleteBookingGroup(ref, reason) {
+    if (PB_PLATFORM_V1) {
+      const result = await this.updateBooking(ref, { status: 'cancelled', reason });
+      return { cancelled: true, voided_fee_amount: 0, result };
+    }
     const { data, error } = await _sb.rpc('void_delete_booking_group', {
       p_booking_ref: ref,
       p_reason: reason,
@@ -1000,6 +1524,7 @@ window.DB = {
 
   // ---- OPEN PLAY REGISTRATIONS ----
   async getOpenPlayRegistrations() {
+    if (PB_PLATFORM_V1) return [];
     return _pbCached('openPlayRegistrations', {}, PB_FAST_CACHE_MS.openPlay, async () => {
       const { data, error } = await _sb.from('open_play_registrations').select('*').order('created_at', { ascending: false });
       if (error) { console.error('getOpenPlayRegistrations:', error); return []; }
@@ -1052,6 +1577,7 @@ window.DB = {
   },
 
   async getOpenPlayCountForDate(date, courtId = null) {
+    if (PB_PLATFORM_V1) return 0;
     return _pbCached('openPlayCount', { date, courtId: courtId || '' }, PB_FAST_CACHE_MS.openPlay, async () => {
       let query = _sb.from('open_play_registrations')
         .select('*', { count: 'exact', head: true })
@@ -1065,6 +1591,7 @@ window.DB = {
   },
 
   async getOpenPlayCountsForDate(date) {
+    if (PB_PLATFORM_V1) return {};
     return _pbCached('openPlayCounts', { date }, PB_FAST_CACHE_MS.openPlay, async () => {
       const { data, error } = await _sb.from('open_play_registrations')
         .select('court_id')
@@ -1087,6 +1614,7 @@ window.DB = {
 
   // ---- OPEN PLAY HOSTS ----
   async getOpenPlayHostApplications() {
+    if (PB_PLATFORM_V1) return [];
     const { data, error } = await _sb.from('open_play_host_applications').select('*').order('created_at', { ascending: false });
     if (error) { console.error('getOpenPlayHostApplications:', error); return []; }
     return (data || []).map(rowToOpenPlayHostApplication);
@@ -1170,6 +1698,7 @@ window.DB = {
   },
 
   async getOpenPlayHostSessions() {
+    if (PB_PLATFORM_V1) return [];
     const { data, error } = await _sb.from('open_play_host_sessions').select('*').order('date', { ascending: true }).order('start_hour', { ascending: true });
     if (error) { console.error('getOpenPlayHostSessions:', error); return []; }
     return (data || []).map(rowToOpenPlayHostSession);
@@ -1200,6 +1729,7 @@ window.DB = {
   },
 
   async getOpenPlayHostSessionRegistrations(sessionId = null) {
+    if (PB_PLATFORM_V1) return [];
     let query = _sb.from('open_play_host_session_registrations').select('*').order('created_at', { ascending: false });
     if (sessionId) query = query.eq('session_id', sessionId);
     const { data, error } = await query;
@@ -1208,6 +1738,7 @@ window.DB = {
   },
 
   async getOpenPlayHostSessionRegistrationCount(sessionId) {
+    if (PB_PLATFORM_V1) return 0;
     const { data, error } = await _sb.rpc('count_open_play_host_session_registrations', { p_session_id: sessionId });
     if (error) { console.error('getOpenPlayHostSessionRegistrationCount:', error); return 0; }
     return Number(data || 0);
@@ -1237,6 +1768,7 @@ window.DB = {
 
   // ---- OPEN PLAY GAME MANAGER ----
   async getOpenPlayGameSessions() {
+    if (PB_PLATFORM_V1) return [];
     const { data, error } = await _sb.from('open_play_game_sessions').select('*').order('date', { ascending: false }).order('created_at', { ascending: false });
     if (error) { console.error('getOpenPlayGameSessions:', error); return []; }
     return data || [];
@@ -1345,6 +1877,21 @@ window.DB = {
 
   // ---- BLOCKED DATES ----
   async getBlockedDates() {
+    if (PB_PLATFORM_V1) {
+      return _pbCached('blockedDates', {}, PB_FAST_CACHE_MS.blockedDates, async () => {
+        const session = await _pbAuthenticatedSession();
+        const tenantId = window.Auth?.getSession?.()?.tenantId;
+        if (!session || !tenantId) return [];
+        const { data, error } = await _sb.from('blocked_dates')
+          .select('blocked_on,starts_at,ends_at')
+          .eq('tenant_id', tenantId)
+          .order('blocked_on');
+        if (error) throw error;
+        return [...new Set((data || [])
+          .filter(row => !row.starts_at && !row.ends_at)
+          .map(row => row.blocked_on))];
+      });
+    }
     return _pbCached('blockedDates', {}, PB_FAST_CACHE_MS.blockedDates, async () => {
       const { data, error } = await _sb.from('blocked_dates').select('date').order('date');
       if (error) { console.error('getBlockedDates:', error); return []; }
@@ -1353,12 +1900,34 @@ window.DB = {
   },
 
   async addBlockedDate(date) {
+    if (PB_PLATFORM_V1) {
+      const tenantId = window.Auth?.getSession?.()?.tenantId;
+      if (!tenantId) throw new Error('Your tenant session is no longer available. Please sign in again.');
+      const { error } = await _sb.from('blocked_dates').insert({
+        tenant_id: tenantId,
+        blocked_on: date,
+        public_label: 'Court unavailable',
+      });
+      if (error) throw error;
+      _pbClearFastCache(['blockedDates', 'bookings', 'platformAvailability']);
+      return;
+    }
     const { error } = await _sb.from('blocked_dates').insert({ date, created_at: new Date().toISOString() });
     if (error) console.error('addBlockedDate:', error);
     _pbClearFastCache(['blockedDates']);
   },
 
   async removeBlockedDate(date) {
+    if (PB_PLATFORM_V1) {
+      const tenantId = window.Auth?.getSession?.()?.tenantId;
+      if (!tenantId) throw new Error('Your tenant session is no longer available. Please sign in again.');
+      const { error } = await _sb.from('blocked_dates').delete()
+        .eq('tenant_id', tenantId).eq('blocked_on', date)
+        .is('starts_at', null).is('ends_at', null);
+      if (error) throw error;
+      _pbClearFastCache(['blockedDates', 'bookings', 'platformAvailability']);
+      return;
+    }
     const { error } = await _sb.from('blocked_dates').delete().eq('date', date);
     if (error) console.error('removeBlockedDate:', error);
     _pbClearFastCache(['blockedDates']);
@@ -1403,6 +1972,22 @@ window.DB = {
 
   // ---- SETTINGS ----
   async getSettings() {
+    if (PB_PLATFORM_V1) {
+      return _pbCached('settings', {}, PB_FAST_CACHE_MS.settings, async () => {
+        const bootstrap = await _pbPlatformBootstrap();
+        const session = await _pbAuthenticatedSession();
+        const tenantId = window.Auth?.getSession?.()?.tenantId;
+        if (!session || !tenantId) return _pbPlatformSettingsToLegacy(bootstrap);
+
+        const { data, error } = await _sb.from('settings')
+          .select('key,value')
+          .eq('tenant_id', tenantId);
+        if (error) throw error;
+        const allSettings = { ...(bootstrap.settings || {}) };
+        for (const row of (data || [])) allSettings[row.key] = row.value;
+        return _pbPlatformSettingsToLegacy({ ...bootstrap, settings: allSettings });
+      });
+    }
     return _pbCached('settings', {}, PB_FAST_CACHE_MS.settings, async () => {
       const { data, error } = await _sb.from('settings').select('*');
       if (error) { console.error('getSettings:', error); return {}; }
@@ -1413,6 +1998,41 @@ window.DB = {
   },
 
   async saveSetting(key, value) {
+    if (PB_PLATFORM_V1) {
+      const tenantId = window.Auth?.getSession?.()?.tenantId;
+      if (!tenantId) throw new Error('Your tenant session is no longer available. Please sign in again.');
+      if (['open_hour', 'close_hour', 'pricing_tiers'].includes(key)) {
+        const courts = await this.getCourts();
+        const mainCourt = courts[0];
+        if (!mainCourt) throw new Error('The Main Court is not configured.');
+        const nextCourt = { ...mainCourt };
+        if (key === 'open_hour') nextCourt.opensAt = `${String(Number(value)).padStart(2, '0')}:00`;
+        if (key === 'close_hour') {
+          const closeHour = Number(value);
+          nextCourt.closesAt = closeHour === 24 ? '00:00' : `${String(closeHour).padStart(2, '0')}:00`;
+        }
+        if (key === 'pricing_tiers') {
+          let tiers;
+          try { tiers = JSON.parse(String(value)); } catch (_) { tiers = null; }
+          if (!Array.isArray(tiers) || tiers.length === 0) throw new Error('At least one valid pricing tier is required.');
+          nextCourt.rateSchedule = tiers;
+          nextCourt.rate = Number(tiers[0]?.rate || mainCourt.rate || 0);
+        }
+        await this.saveCourt(nextCourt);
+        _pbClearFastCache(['courts', 'settings', 'platformBootstrap', 'platformAvailability']);
+        return;
+      }
+      const publicKey = /^(payment_method_(cash|gcash|bdopay|maya|bpi|gotyme|pnb)|payment_acceptance_mode|(gcash|gotyme|pnb)_merchant_(number|name)|(gcash|gotyme|pnb)_qr_image)$/.test(key);
+      const { error } = await _sb.from('settings').upsert({
+        tenant_id: tenantId,
+        key,
+        value,
+        is_public: publicKey,
+      }, { onConflict: 'tenant_id,key' });
+      if (error) throw error;
+      _pbClearFastCache(['settings', 'platformBootstrap']);
+      return;
+    }
     const { error } = await _sb.from('settings').upsert({ key, value });
     if (error) { console.error('saveSetting:', error); throw error; }
     _pbClearFastCache(['settings']);
@@ -1422,7 +2042,123 @@ window.DB = {
     _pbClearFastCache(scopes);
   },
 
+  async createPublicBooking(booking, { turnstileToken } = {}) {
+    if (!PB_PLATFORM_V1) throw new Error('The tenant booking service is not enabled.');
+    const slots = [...new Set((booking?.slots || []).map(Number))]
+      .filter(Number.isInteger)
+      .sort((a, b) => a - b);
+    if (!slots.length || slots.some((hour, index) => index > 0 && hour !== slots[index - 1] + 1)) {
+      throw new Error('Booking hours must be consecutive.');
+    }
+    const token = String(turnstileToken || '').trim();
+    if (!token) throw new Error('Please complete the security check before confirming.');
+    const clientRequestId = String(booking?.clientRequestId || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(clientRequestId)) {
+      throw new Error('A secure booking request ID could not be created. Please refresh and try again.');
+    }
+    const notes = [booking.eventType, booking.eventSetupNotes]
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+      .join(' - ') || null;
+    const payload = {
+      tenantSlug: PB_TENANT_SLUG,
+      courtId: String(booking.courtId),
+      bookingDate: String(booking.date),
+      startTime: `${String(slots[0]).padStart(2, '0')}:00`,
+      durationHours: slots.length,
+      bookingType: booking.bookingType === 'event' ? 'event' : 'regular',
+      customer: {
+        name: String(booking.fullName || '').trim(),
+        email: String(booking.email || '').trim(),
+        phone: String(booking.contactNumber || '').trim(),
+      },
+      guestCount: booking.bookingType === 'event'
+        ? Number(booking.eventGuestCount || 1)
+        : 1,
+      notes,
+      clientRequestId,
+      turnstileToken: token,
+    };
+    const result = await _invokeEdgeFunction(
+      `create-booking?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      payload,
+      { preferDirect: true }
+    );
+    if (!result?.ok || !result?.booking?.reference) {
+      throw new Error(_pbApiErrorMessage(result, '', 'The booking service returned an invalid response.'));
+    }
+    _pbClearFastCache(['bookings', 'platformAvailability']);
+    return result.booking;
+  },
+
+  async submitPublicPaymentReceipt({
+    bookingReference,
+    bookingToken,
+    paymentMethod,
+    paymentReference = '',
+    receiptFile,
+  }) {
+    if (!PB_PLATFORM_V1) throw new Error('The tenant receipt service is not enabled.');
+    if (!receiptFile) throw new Error('Receipt screenshot is required.');
+    const imageFile = await _pbPrepareReceiptImage(receiptFile);
+    const imageType = String(imageFile?.type || '').toLowerCase();
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(imageType)) {
+      throw new Error('Use a JPEG, PNG, or WebP receipt image.');
+    }
+    const backendPaymentMethod = window.PB_PAYMENT_METHOD_CODES?.[paymentMethod] || paymentMethod;
+    const form = new FormData();
+    form.append('receiptFile', imageFile, imageFile.name || 'receipt.jpg');
+    const response = await _pbFetchWithTimeout(
+      `${SUPABASE_URL.replace(/\/+$/, '')}/functions/v1/submit-payment-receipt?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          'X-Booking-Reference': String(bookingReference || ''),
+          'X-Booking-Token': String(bookingToken || ''),
+          'X-Payment-Method': String(backendPaymentMethod || ''),
+          ...(paymentReference ? { 'X-Payment-Reference': String(paymentReference) } : {}),
+        },
+        body: form,
+      },
+      PB_RECEIPT_TIMEOUT_MS
+    );
+    const text = await response.text();
+    const result = _safeJsonParse(text) || {};
+    if (!response.ok || result.ok !== true) {
+      const failure = new Error(_pbApiErrorMessage(result, text, `Receipt upload failed (HTTP ${response.status}).`));
+      failure.code = result?.error?.code || null;
+      failure.httpStatus = response.status;
+      throw failure;
+    }
+    _pbClearFastCache(['bookings', 'platformAvailability']);
+    return result;
+  },
+
+  async getPublicBookingStatus({ bookingReference, bookingToken }) {
+    if (!PB_PLATFORM_V1) throw new Error('The tenant booking-status service is not enabled.');
+    const result = await _invokeEdgeFunction(
+      `booking-status?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      {
+        tenantSlug: PB_TENANT_SLUG,
+        bookingReference: String(bookingReference || ''),
+        bookingToken: String(bookingToken || ''),
+      },
+      { preferDirect: true }
+    );
+    if (!result?.ok || !result?.booking) {
+      throw new Error(result?.message || result?.error || 'Booking status is unavailable.');
+    }
+    return result.booking;
+  },
+
   async createPaymentSession(payload) {
+    if (PB_PLATFORM_V1) {
+      const error = new Error('Online payment checkout is not configured for the tenant platform.');
+      error.code = 'PLATFORM_PAYMENT_API_REQUIRED';
+      throw error;
+    }
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       throw new Error('Supabase configuration missing (SUPABASE_URL / SUPABASE_ANON_KEY).');
     }
@@ -1444,6 +2180,11 @@ window.DB = {
 
   async sendConfirmationEmail(booking, options = {}) {
     if (!booking?.email) return { ok: false, skipped: true, reason: 'No customer email' };
+    if (PB_PLATFORM_V1) {
+      const result = { ok: false, skipped: true, reason: 'Platform booking emails are sent only by trusted server workflows.' };
+      if (options.allowFailure) return result;
+      throw new Error(result.reason);
+    }
     return _invokeEdgeFunction('send-confirmation-email', _bookingEmailPayload(booking), {
       allowFailure: !!options.allowFailure,
     });
@@ -1451,12 +2192,18 @@ window.DB = {
 
   async sendRescheduleEmail(payload, options = {}) {
     if (!payload?.email) return { ok: false, skipped: true, reason: 'No customer email' };
+    if (PB_PLATFORM_V1) {
+      const result = { ok: false, skipped: true, reason: 'Platform rescheduling is not enabled.' };
+      if (options.allowFailure) return result;
+      throw new Error(result.reason);
+    }
     return _invokeEdgeFunction('send-reschedule-email', payload, {
       allowFailure: !!options.allowFailure,
     });
   },
 
   async sendTelegramNotification(payload, options = {}) {
+    if (PB_PLATFORM_V1) return { ok: false, skipped: true, reason: 'Telegram is not configured for the tenant platform.' };
     return _invokeEdgeFunction('send-telegram-notification', payload, {
       allowFailure: options.allowFailure !== false,
     });
@@ -1473,6 +2220,9 @@ window.DB = {
   },
 
   async getIntegrationStatus() {
+    if (PB_PLATFORM_V1) {
+      return { ok: true, platform: true, legacyIntegrationsDisabled: true };
+    }
     return _invokeEdgeFunction('integration-status', { action: 'status' }, { allowFailure: true });
   },
 
@@ -1481,6 +2231,9 @@ window.DB = {
   // imageBase64 remains supported for older deployed clients.
   // Returns: { ok, status, flags, extracted, confidence, message }
   async verifyGcashReceipt(payload) {
+    if (PB_PLATFORM_V1) {
+      throw new Error('Use the secure customer receipt-submission workflow for platform bookings.');
+    }
     // Do not use `instanceof Blob` here. Facebook/Messenger WebViews can hand
     // us a File from a different JavaScript realm, where that check is false.
     if (payload?.imageFile) {
@@ -1545,6 +2298,30 @@ window.DB = {
 
   // Request a short-lived signed URL to view a stored receipt (admin only).
   async getReceiptSignedUrl(bookingRef) {
+    if (PB_PLATFORM_V1) {
+      await window.Auth.requireAal2();
+      const booking = await this.getBookingByRef(bookingRef);
+      if (!booking?.receiptVerificationId || !booking?.receiptImageUrl) {
+        throw new Error('No receipt image is attached to this booking.');
+      }
+      const result = await _invokeEdgeFunction(
+        `get-receipt-view-url?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+        {
+          tenantSlug: PB_TENANT_SLUG,
+          verificationId: booking.receiptVerificationId,
+        },
+        { preferDirect: true }
+      );
+      if (!result?.ok || !result?.signedUrl) {
+        throw new Error(result?.message || result?.error || 'Could not load the protected receipt image.');
+      }
+      const signedUrl = new URL(String(result.signedUrl));
+      const expectedHost = new URL(SUPABASE_URL).hostname;
+      if (signedUrl.protocol !== 'https:' || signedUrl.hostname !== expectedHost || signedUrl.username || signedUrl.password) {
+        throw new Error('The protected receipt URL was not issued by the booking platform.');
+      }
+      return signedUrl.href;
+    }
     const { data, error } = await _sb.functions.invoke('verify-gcash-receipt', {
       body: { action: 'sign', bookingRef },
     });
@@ -1573,6 +2350,7 @@ window.DB = {
 
   // ---- SEED DEFAULT DATA (runs once on first load) ----
   async seedDefaultData() {
+    if (PB_PLATFORM_V1) return;
     const courts = await this.getCourts();
     if (courts.length === 0) {
       await _sb.from('courts').insert([
@@ -2824,6 +3602,80 @@ window.Auth = {
     if (!sess) return false;
     if (sess.role === 'owner') return true; // system owner has all access
     return sess.role === role;
+  },
+
+  async getMfaStatus() {
+    if (!PB_SUPABASE_AUTH_CONFIGURED) {
+      return { currentLevel: null, nextLevel: null, verifiedFactors: [], unverifiedFactors: [] };
+    }
+    const [{ data: aal, error: aalError }, { data: factors, error: factorsError }] = await Promise.all([
+      _sb.auth.mfa.getAuthenticatorAssuranceLevel(),
+      _sb.auth.mfa.listFactors(),
+    ]);
+    if (aalError) throw aalError;
+    if (factorsError) throw factorsError;
+    const all = Array.isArray(factors?.all)
+      ? factors.all
+      : [...(factors?.totp || []), ...(factors?.phone || [])];
+    const totp = all.filter(factor => factor?.factor_type === 'totp');
+    return {
+      currentLevel: aal?.currentLevel || null,
+      nextLevel: aal?.nextLevel || null,
+      verifiedFactors: totp.filter(factor => factor.status === 'verified'),
+      unverifiedFactors: totp.filter(factor => factor.status !== 'verified'),
+    };
+  },
+
+  async startTotpEnrollment() {
+    const status = await this.getMfaStatus();
+    if (status.verifiedFactors.length) {
+      return { alreadyEnrolled: true, factor: status.verifiedFactors[0] };
+    }
+    // An abandoned unverified factor cannot reveal its QR secret again. Remove
+    // only those incomplete factors before creating a fresh enrollment.
+    for (const factor of status.unverifiedFactors) {
+      const { error } = await _sb.auth.mfa.unenroll({ factorId: factor.id });
+      if (error) throw error;
+    }
+    const { data, error } = await _sb.auth.mfa.enroll({
+      factorType: 'totp',
+      friendlyName: `Backyard Pickle ${new Date().toISOString().slice(0, 10)}`,
+    });
+    if (error) throw error;
+    if (!data?.id || !data?.totp?.qr_code) throw new Error('Authenticator setup did not return a QR code.');
+    return { alreadyEnrolled: false, factor: data };
+  },
+
+  async verifyTotpCode(code, factorId = null) {
+    const normalizedCode = String(code || '').replace(/\s/g, '');
+    if (!/^\d{6}$/.test(normalizedCode)) throw new Error('Enter the 6-digit code from your authenticator app.');
+    const status = await this.getMfaStatus();
+    const id = factorId || status.verifiedFactors[0]?.id || status.unverifiedFactors[0]?.id;
+    if (!id) throw new Error('No authenticator factor is available. Start setup again.');
+    const { data: challenge, error: challengeError } = await _sb.auth.mfa.challenge({ factorId: id });
+    if (challengeError) throw challengeError;
+    const { data, error } = await _sb.auth.mfa.verify({
+      factorId: id,
+      challengeId: challenge.id,
+      code: normalizedCode,
+    });
+    if (error) throw error;
+    const verified = await this.getMfaStatus();
+    if (verified.currentLevel !== 'aal2') throw new Error('Two-step verification did not complete. Please try again.');
+    return data;
+  },
+
+  async requireAal2() {
+    // Only protected production receipt operations require step-up. Ordinary
+    // dashboard reads intentionally remain available at AAL1.
+    if (!PB_PLATFORM_V1) return true;
+    const status = await this.getMfaStatus();
+    if (status.currentLevel === 'aal2') return true;
+    const error = new Error(status.verifiedFactors.length
+      ? 'Enter your authenticator code to continue.'
+      : 'Set up an authenticator app before accessing payment receipts.');
+    error.code = status.verifiedFactors.length ? 'MFA_CHALLENGE_REQUIRED' : 'MFA_ENROLLMENT_REQUIRED';
+    throw error;
   },
 
   async refreshSessionFromAuth({ remember = null } = {}) {
