@@ -4174,6 +4174,8 @@ const RECEIPT_FLAG_LABELS = {
   payment_receiver_unverified:'Receiver could not be verified', low_ocr_confidence:'Blurry / low OCR',
   ocr_text_not_detected:'Receipt text not detected', auto_approval_eligible:'All automatic checks passed',
   ocr_confidence_unavailable:'Vision confidence not provided',
+  receipt_date_not_detected:'Receipt date not detected', receipt_time_not_detected:'Receipt time not detected',
+  receipt_time_before_booking:'Receipt predates the booking', payment_window_expired:'Paid outside the 10-minute window',
 };
 function receiptReasonText(flags){
   if (!flags || !flags.length) return 'No specific reason saved';
@@ -4204,9 +4206,10 @@ function receiptFlagsForDisplay(b){
     flags = removeReceiptFlags(flags, ['REF_FORMAT_INVALID']);
   }
 
-  const age = Number(ex.receiptAgeMinutes);
-  const earlyTolerance = Number(ex.allowedPaymentEarlyToleranceMinutes ?? 2);
-  const windowMinutes = Number(ex.allowedPaymentWindowMinutes ?? 10);
+  const timing = ex.timing && typeof ex.timing === 'object' ? ex.timing : {};
+  const age = Number(timing.ageMinutes ?? ex.receiptAgeMinutes);
+  const earlyTolerance = Number(timing.earlyToleranceMinutes ?? ex.allowedPaymentEarlyToleranceMinutes ?? 2);
+  const windowMinutes = Number(timing.allowedWindowMinutes ?? ex.allowedPaymentWindowMinutes ?? 10);
   if (Number.isFinite(age) && age >= -earlyTolerance) {
     flags = removeReceiptFlags(flags, ['TIME_FUTURE']);
   }
@@ -4257,12 +4260,33 @@ function receiptOcrProviderLabel(value){
 }
 function receiptTimeValue(extracted){
   if (!extracted) return '--';
+  const timing = extracted.timing && typeof extracted.timing === 'object' ? extracted.timing : {};
+  if (timing.receiptTime) {
+    const [hourValue, minute = '00'] = String(timing.receiptTime).split(':');
+    const hour = Number(hourValue);
+    if (Number.isInteger(hour) && hour >= 0 && hour <= 23) {
+      return `${hour % 12 || 12}:${esc(minute)} ${hour >= 12 ? 'PM' : 'AM'}`;
+    }
+  }
   if (extracted.timePh12) return esc(extracted.timePh12);
   if (extracted.time) {
     const d = new Date(extracted.time);
     if (!Number.isNaN(d.getTime())) return esc(d.toLocaleString('en-PH', { dateStyle:'medium', timeStyle:'short', hour12:true }));
   }
   return '--';
+}
+function receiptDateTimeValue(value, timeZone){
+  if (!value) return '--';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '--';
+  try {
+    return esc(d.toLocaleString('en-PH', {
+      timeZone: timeZone || 'Asia/Manila', month:'short', day:'numeric', year:'numeric',
+      hour:'numeric', minute:'2-digit', hour12:true,
+    }));
+  } catch (_) {
+    return esc(d.toLocaleString('en-PH', { dateStyle:'medium', timeStyle:'short', hour12:true }));
+  }
 }
 function receiptReceiverValue(extracted, booking){
   if (!extracted) return '--';
@@ -4277,13 +4301,19 @@ function receiptDetailsHtml(b){
   const ex = b.receiptExtracted || {};
   const detected = ex.detected && typeof ex.detected === 'object' ? ex.detected : {};
   const comparison = ex.comparison && typeof ex.comparison === 'object' ? ex.comparison : {};
+  const timing = ex.timing && typeof ex.timing === 'object' ? ex.timing : {};
+  const confidenceData = ex.confidence && typeof ex.confidence === 'object' ? ex.confidence : {};
   const displayFlags = receiptFlagsForDisplay(b);
   const reason = displayFlags.length ? receiptReasonText(displayFlags) : 'All visible checks passed';
-  const rawConfidence = b.receiptConfidence ?? ex.ocrConfidence;
-  const ocrConfidenceNumber = Number(rawConfidence);
-  const ocrConfidence = rawConfidence != null && Number.isFinite(ocrConfidenceNumber)
-    ? `${Math.round(ocrConfidenceNumber * 100)}%`
-    : ex.provider === 'google_vision' ? 'Not provided by Vision' : '--';
+  const visionConfidenceNumber = Number(confidenceData.vision);
+  const effectiveConfidenceNumber = Number(confidenceData.effective ?? b.receiptConfidence ?? ex.ocrConfidence);
+  const hasVisionConfidence = confidenceData.vision != null && Number.isFinite(visionConfidenceNumber);
+  const hasEffectiveConfidence = Number.isFinite(effectiveConfidenceNumber);
+  const ocrConfidence = hasVisionConfidence
+    ? `${Math.round(visionConfidenceNumber * 100)}% Google Vision · ${Math.round(effectiveConfidenceNumber * 100)}% final score`
+    : hasEffectiveConfidence
+      ? `${Math.round(effectiveConfidenceNumber * 100)}% verification score (Vision word score unavailable)`
+      : ex.provider === 'google_vision' ? 'Not provided by Vision' : '--';
   const detectedAmounts = Array.isArray(detected.amounts) ? detected.amounts : [];
   const expectedAmount = Number(comparison.expectedAmount);
   const matchingAmount = detectedAmounts.find(value => Number.isFinite(Number(value)) && Number.isFinite(expectedAmount) && Math.abs(Number(value) - expectedAmount) <= .01);
@@ -4297,13 +4327,18 @@ function receiptDetailsHtml(b){
         : ex.amountReliable === false
           ? 'Uncertain — manual review'
           : '--';
+  const windowAge = Number(timing.ageMinutes ?? ex.receiptAgeMinutes);
+  const windowLimit = Number(timing.allowedWindowMinutes ?? ex.allowedPaymentWindowMinutes);
+  const windowValue = Number.isFinite(windowAge) && Number.isFinite(windowLimit)
+    ? `${windowAge < 0 ? Math.abs(windowAge) + ' min before' : windowAge + ' min after'} booking · ${windowLimit}-min limit · ${timing.withinWindow === true ? 'Within window' : 'Outside window'}`
+    : Number.isFinite(windowLimit) ? `${windowLimit}-minute limit · timestamp unreadable` : '--';
   const rows = [
     ['OCR Ref', receiptDetailValue(ex.ref || detected.paymentReference || b.gcashRef)],
     ['Amount Read', receiptAmountValue(amountRead)],
     ['Receipt Time', receiptTimeValue(ex)],
-    ['Receipt Date', receiptDetailValue(ex.date)],
-    ['Booking Started', receiptDetailValue(ex.bookingStartedAtPh12)],
-    ['Window', ex.allowedPaymentWindowMinutes ? `${esc(ex.allowedPaymentWindowMinutes)} min` : '--'],
+    ['Receipt Date', receiptDetailValue(timing.receiptDate || ex.date)],
+    ['Booking Started', timing.bookingStartedAt ? receiptDateTimeValue(timing.bookingStartedAt, timing.tenantTimezone) : receiptDetailValue(ex.bookingStartedAtPh12)],
+    ['Window', receiptDetailValue(windowValue)],
     ['OCR Engine', receiptOcrProviderLabel(ex.ocrProvider || ex.provider)],
     ['Receiver', receiptReceiverValue(ex, b), true],
     ...(ex.ocrFallbackReason ? [['OCR Fallback', receiptDetailValue(ex.ocrFallbackReason), true]] : []),
