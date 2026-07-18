@@ -2367,6 +2367,24 @@ window.DB = {
     return result.booking;
   },
 
+  async cancelPublicBookingHold({ bookingReference, bookingToken }) {
+    if (!PB_PLATFORM_V1) throw new Error('The tenant booking-cancellation service is not enabled.');
+    const result = await _invokeEdgeFunction(
+      `cancel-booking?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      {
+        tenantSlug: PB_TENANT_SLUG,
+        bookingReference: String(bookingReference || ''),
+        bookingToken: String(bookingToken || ''),
+      },
+      { preferDirect: true }
+    );
+    if (!result?.ok || !result?.cancellation) {
+      throw new Error(result?.message || result?.error || 'The slot could not be released.');
+    }
+    _pbClearFastCache(['bookings', 'platformAvailability']);
+    return result.cancellation;
+  },
+
   async createPaymentSession(payload) {
     if (PB_PLATFORM_V1) {
       const error = new Error('Online payment checkout is not configured for the tenant platform.');

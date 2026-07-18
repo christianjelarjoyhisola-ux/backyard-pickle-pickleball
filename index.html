@@ -863,6 +863,7 @@ body.dark .shared-date-display {
 }
 .bk-modal-ft .btn { flex:1; justify-content:center; }
 .bk-modal-ft .btn:disabled { opacity:.62; cursor:wait; transform:none; }
+.bk-modal-ft #wizCancelBtn { flex:.82; color:var(--red); }
 
 .qr-zoom-overlay {
   position:fixed; inset:0; z-index:9999; display:none; align-items:center; justify-content:center;
@@ -3508,7 +3509,8 @@ body.host-mode .courts { padding-bottom:140px; }
 
     <!-- Footer -->
     <div class="bk-modal-ft">
-      <button class="btn btn-g" id="wizBackBtn" onclick="wizBack()" type="button">✕ Cancel</button>
+      <button class="btn btn-g" id="wizCancelBtn" onclick="cancelBookingWizard()" type="button">✕ Cancel</button>
+      <button class="btn btn-g" id="wizBackBtn" onclick="wizBack()" type="button" hidden>← Back</button>
       <button class="btn btn-p" id="wizNextBtn" onclick="wizNext()" type="button">Next →</button>
     </div>
 
@@ -6157,12 +6159,26 @@ async function maybeResumeGuestBooking() {
   toast('Your reserved booking was restored. Continue before the timer ends.', 'ok');
 }
 
-function cancelReservedBookings(refs = reservedRefs()) {
+async function cancelReservedBookings(refs = reservedRefs()) {
   const uniqueRefs = [...new Set((refs || []).filter(Boolean))];
-  clearReservationState();
-  return Promise.allSettled(uniqueRefs.map(ref =>
+  if (window.PB_PLATFORM_V1) {
+    const access = _platformBookingAccess || readPlatformJson(sessionStorage, PLATFORM_ACCESS_KEY);
+    if (!access?.reference || !access?.bookingToken) {
+      clearReservationState();
+      return [];
+    }
+    const result = await DB.cancelPublicBookingHold({
+      bookingReference: access.reference,
+      bookingToken: access.bookingToken,
+    });
+    clearReservationState();
+    return [result];
+  }
+  const results = await Promise.allSettled(uniqueRefs.map(ref =>
     DB.updateBooking(ref, { status: 'cancelled', paymentStatus: 'rejected' }).catch(() => {})
   ));
+  clearReservationState();
+  return results;
 }
 
 function clearSelectedBookingUi() {
@@ -6189,6 +6205,49 @@ async function releaseReservedBookingViews(items = activeBookingItems()) {
   clearSelectedBookingUi();
   if (refreshItems.length) await refreshBookingItemViews(refreshItems);
   else await renderCourts();
+}
+
+let _bookingCancelInFlight = false;
+
+async function cancelBookingWizard({ expired = false } = {}) {
+  if (_bookingCancelInFlight) return;
+  const itemsToRelease = activeBookingItems();
+  const platformAccess = window.PB_PLATFORM_V1
+    ? (_platformBookingAccess || readPlatformJson(sessionStorage, PLATFORM_ACCESS_KEY))
+    : null;
+  const hasServerHold = !!(platformAccess?.reference && platformAccess?.bookingToken) || reservedRefs().length > 0;
+  if (hasServerHold && !expired && !window.confirm('Cancel this booking? Your reserved slot will be released immediately.')) return;
+
+  _bookingCancelInFlight = true;
+  const cancelButton = $('wizCancelBtn');
+  const backButton = $('wizBackBtn');
+  const nextButton = $('wizNextBtn');
+  const originalCancelText = cancelButton?.textContent || '✕ Cancel';
+  [cancelButton, backButton, nextButton].forEach(button => { if (button) button.disabled = true; });
+  if (cancelButton) cancelButton.textContent = hasServerHold ? 'Releasing...' : 'Cancelling...';
+
+  try {
+    if (hasServerHold) await releaseReservedBookingViews(itemsToRelease);
+    else clearSelectedBookingUi();
+    if (window.PB_PLATFORM_V1) clearPlatformRequestState();
+    closeBookModal({ cancel: true });
+    if (hasServerHold && !expired) toast('Booking cancelled. Your slot is available again.', 'ok');
+  } catch (error) {
+    const expiredHold = expired && error?.code === 'BOOKING_HOLD_EXPIRED';
+    if (expiredHold) {
+      clearReservationState();
+      clearSelectedBookingUi();
+      clearPlatformRequestState();
+      closeBookModal({ cancel: true });
+      await renderCourts().catch(() => {});
+    } else {
+      toast(error?.message || 'Could not release the slot. Please try Cancel again.', 'err');
+    }
+  } finally {
+    _bookingCancelInFlight = false;
+    [cancelButton, backButton, nextButton].forEach(button => { if (button) button.disabled = false; });
+    if (cancelButton) cancelButton.textContent = originalCancelText;
+  }
 }
 
 // A `verifying` booking only HOLDS its slot for RESERVATION_MINUTES. After that
@@ -6569,7 +6628,7 @@ function startSlotCountdown(initialSeconds = null) {
       banner.style.display = 'none';
       // Time expired — cancel reservation and close modal.
       toast('⏰ Time expired! Your slot reservation was released.', 'err');
-      closeBookModal({ cancel: true });
+      cancelBookingWizard({ expired: true });
       return;
     }
     secsLeft--;
@@ -6645,7 +6704,7 @@ function wizGoTo(n) {
       dot.classList.toggle('done', i < n);
     }
   }
-  $('wizBackBtn').textContent = n <= wizStartStep ? '✕ Cancel' : '← Back';
+  $('wizBackBtn').hidden = n <= wizStartStep;
   $('wizNextBtn').textContent = n === 5 ? '🎾 Confirm Booking' : 'Next →';
   if (n === 2) { renderSlots(); }
   if (n === 3) {
@@ -6731,7 +6790,7 @@ async function wizNext() {
 }
 
 function wizBack() {
-  if (wizStep <= wizStartStep) { closeBookModal({ cancel: true }); return; }
+  if (wizStep <= wizStartStep) { cancelBookingWizard(); return; }
   if (window.PB_PLATFORM_V1 && _platformBookingAccess && wizStep === 4) {
     toast('Your slot is already held with these details. Cancel and start again if you need to change them.', 'inf');
     return;
@@ -8959,7 +9018,11 @@ async function restorePlatformDraftUi(saved, { openModal = true, held = false } 
   $('bDate').value = item.date;
   sharedCourtDate = normalizedCourtBrowseDate(item.date);
   syncSharedCourtDateUI(sharedCourtDate);
-  if (held) _platformBookingAccess = saved;
+  if (held) {
+    _platformBookingAccess = saved;
+    _reservedRef = saved.reference || item.ref || null;
+    _reservedRefs = _reservedRef ? [_reservedRef] : [];
+  }
   restoreGuestResumeDraft(saved.form || {
     name: draft.fullName,
     phone: draft.contactNumber,
@@ -9159,6 +9222,8 @@ async function createPlatformBookingHold() {
       fingerprint: requestIdentity.fingerprint,
       clientRequestId: requestIdentity.clientRequestId,
     };
+    _reservedRef = serverBooking.reference;
+    _reservedRefs = [serverBooking.reference];
     try {
       sessionStorage.setItem(PLATFORM_ACCESS_KEY, JSON.stringify(_platformBookingAccess));
     } catch (_) {}
