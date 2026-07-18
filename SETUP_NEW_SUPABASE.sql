@@ -1938,19 +1938,21 @@ drop policy if exists host_ids_no_delete on storage.objects;
 -- 6. SEED DATA
 -- ============================================================
 
-insert into public.courts (id, name, description, rate, blocked, feats)
+insert into public.courts (id, name, description, rate, blocked, feats, rate_schedule)
 values
-  ('c1', 'Court Alpha', 'Outdoor - Open Air - Standard Flooring', 350, false, array['Outdoor','Open Air','Standard Floor']),
-  ('c2', 'Court Beta', 'Outdoor - Open Air - Standard Flooring', 280, false, array['Outdoor','Open Air','Standard Floor'])
+  ('c1', 'Main Court', 'Outdoor pickleball court', 200, false, array['Outdoor'], '[{"from":6,"to":17,"rate":200},{"from":17,"to":24,"rate":280}]'::jsonb)
 on conflict (id) do nothing;
 
 insert into public.settings (key, value)
 values
   ('venue_name', 'Backyard Pickle'),
   ('open_time', '6'),
-  ('close_time', '22'),
+  ('close_time', '24'),
+  ('open_hour', '6'),
+  ('close_hour', '24'),
+  ('pricing_tiers', '[{"from":6,"to":17,"rate":200},{"from":17,"to":24,"rate":280}]'),
+  ('open_play_config', '{"enabled":false,"start":6,"end":24,"days":[],"specificDates":[],"courtIds":[],"fee":0,"maxPlayers":16}'),
   ('booking_fee', '5'),
-  ('open_play_fee', '100'),
   ('payment_method_maya', '1'),
   ('payment_method_bpi', '1')
 on conflict (key) do nothing;

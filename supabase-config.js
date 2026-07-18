@@ -1882,38 +1882,42 @@ window.DB = {
 (function installLocalDataMode() {
   if (!window.PB_USE_LOCAL_DATA) return;
 
-  const STORE_KEY = 'backyard_pickle_local_db_v1';
+  const STORE_KEY = 'backyard_pickle_local_db_v2';
+  try { localStorage.removeItem('backyard_pickle_local_db_v1'); } catch (_) {}
   const nowIso = () => new Date().toISOString();
   const localRef = prefix => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`.toUpperCase();
 
-  const defaultCourts = () => Array.from({ length: 10 }, (_, i) => {
-    const n = i + 1;
-    return {
-      id: `c${n}`,
-      name: n === 1 ? 'Backyard Pickle Court 1' : `Court ${n}`,
+  const defaultCourts = () => ([
+    {
+      id: 'c1',
+      name: 'Main Court',
       desc: 'Outdoor',
-      rate: n <= 5 ? 60 : 90,
+      rate: 200,
       blocked: false,
       feats: ['Outdoor'],
       photo: '',
       rateSchedule: [
-        { from: 6, to: 18, rate: 60 },
-        { from: 18, to: 23, rate: 90 },
+        { from: 6, to: 17, rate: 200 },
+        { from: 17, to: 24, rate: 280 },
       ],
-    };
-  });
+    },
+  ]);
 
   const defaultSettings = () => ({
     open_hour: '6',
     close_hour: '24',
+    pricing_tiers: JSON.stringify([
+      { from: 6, to: 17, rate: 200 },
+      { from: 17, to: 24, rate: 280 },
+    ]),
     open_play_config: JSON.stringify({
-      enabled: true,
+      enabled: false,
       start: 6,
-      end: 23,
-      days: [0, 6],
-      specificDates: ['2026-06-20'],
+      end: 24,
+      days: [],
+      specificDates: [],
       courtIds: [],
-      fee: 25,
+      fee: 0,
       maxPlayers: 16,
     }),
     payment_acceptance_mode: 'full_payment_only',
@@ -1954,56 +1958,7 @@ window.DB = {
     },
   ]);
 
-  const defaultHostDemoBookings = () => {
-    const makeHostBooking = ({ ref, groupRef = null, courtId, courtName, date, slots, rate, method = 'gcash', gcashRef = '', paymentStatus = 'downpayment_paid', status = 'confirmed', createdDaysAgo = 0 }) => {
-      const duration = slots.length;
-      const courtFee = duration * rate;
-      const serviceFee = duration * 5;
-      const total = courtFee + serviceFee;
-      const downpayment = Math.round((courtFee * 0.25) + serviceFee);
-      const start = Math.min(...slots);
-      const end = Math.max(...slots) + 1;
-      return {
-        ref,
-        groupRef,
-        fullName: 'Open Play Test Host',
-        contactNumber: '09171234567',
-        email: 'host.test@backyard-pickle.local',
-        courtId,
-        courtName,
-        date,
-        slots,
-        startTime: _fmtBookingHour(start),
-        endTime: _fmtBookingHour(end),
-        timeLabel: `${_fmtBookingHour(start)} - ${_fmtBookingHour(end)}`,
-        duration,
-        rate,
-        total,
-        paymentMethod: method,
-        paymentFlow: method,
-        gcashRef,
-        downpayment: paymentStatus === 'paid' ? total : downpayment,
-        hostBooking: true,
-        hostUserId: 'host_test_001',
-        hostName: 'Open Play Test Host',
-        hostEmail: 'host.test@backyard-pickle.local',
-        paymentStatus,
-        status,
-        createdAt: new Date(Date.now() - createdDaysAgo * 86400000).toISOString(),
-      };
-    };
-    return [
-      makeHostBooking({ ref: 'HOST-DEMO-001', courtId: 'c1', courtName: 'Backyard Pickle Court 1', date: '2026-07-12', slots: [14, 15], rate: 60, gcashRef: '1234567890123', createdDaysAgo: 1 }),
-      makeHostBooking({ ref: 'HOST-DEMO-002', courtId: 'c2', courtName: 'Court 2', date: '2026-07-14', slots: [18, 19, 20], rate: 90, gcashRef: '9876543210123', createdDaysAgo: 2 }),
-      makeHostBooking({ ref: 'HOST-DEMO-003', courtId: 'c3', courtName: 'Court 3', date: '2026-07-18', slots: [8, 9], rate: 60, method: 'cash', paymentStatus: 'unpaid', status: 'pending', createdDaysAgo: 0 }),
-      makeHostBooking({ ref: 'HOST-DEMO-004', courtId: 'c4', courtName: 'Court 4', date: '2026-07-04', slots: [16, 17], rate: 60, gcashRef: '2223334445556', paymentStatus: 'paid', createdDaysAgo: 6 }),
-      makeHostBooking({ ref: 'HOST-DEMO-005', courtId: 'c5', courtName: 'Court 5', date: '2026-06-29', slots: [19, 20, 21], rate: 90, gcashRef: '3334445556667', paymentStatus: 'downpayment_paid', createdDaysAgo: 12 }),
-      makeHostBooking({ ref: 'HOST-DEMO-006', courtId: 'c6', courtName: 'Court 6', date: '2026-07-20', slots: [10, 11, 12], rate: 90, gcashRef: '4445556667778', paymentStatus: 'for_verification', status: 'verifying', createdDaysAgo: 0 }),
-      makeHostBooking({ ref: 'HOST-DEMO-MULTI-001-A', groupRef: 'HOST-DEMO-MULTI-001', courtId: 'c7', courtName: 'Court 7', date: '2026-07-25', slots: [17, 18, 19, 20], rate: 90, gcashRef: '5556667778889', createdDaysAgo: 0 }),
-      makeHostBooking({ ref: 'HOST-DEMO-MULTI-001-B', groupRef: 'HOST-DEMO-MULTI-001', courtId: 'c8', courtName: 'Court 8', date: '2026-07-25', slots: [17, 18, 19, 20], rate: 90, gcashRef: '5556667778889', createdDaysAgo: 0 }),
-      makeHostBooking({ ref: 'HOST-DEMO-MULTI-001-C', groupRef: 'HOST-DEMO-MULTI-001', courtId: 'c9', courtName: 'Court 9', date: '2026-07-25', slots: [17, 18, 19, 20], rate: 90, gcashRef: '5556667778889', createdDaysAgo: 0 }),
-    ];
-  };
+  const defaultHostDemoBookings = () => [];
 
   function freshDb() {
     return {
