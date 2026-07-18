@@ -24,3 +24,6 @@ Thumbs.db
 .wrangler/
 .wrangler-login*.txt
 test-results/
+
+# Standalone multi-tenant backend repository kept beside this frontend
+platform-backend/
