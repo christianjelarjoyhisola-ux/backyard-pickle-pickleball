@@ -11270,7 +11270,7 @@ function applyPlatformVisibility() {
     if (!visibleItems && section.querySelector('.nav-item')) section.style.display = 'none';
   });
   document.querySelectorAll('.platform-open-play-only').forEach(el => { el.style.display = 'none'; });
-  document.querySelectorAll('[onclick*="openNewBookingModal"], [onclick*="goto(\'payments\')"]').forEach(el => {
+  document.querySelectorAll('[onclick*="openNewBookingModal"], [onclick*="goto(\'payments\')"]:not(.nav-item)').forEach(el => {
     el.style.display = 'none';
   });
   const hostBookingTab = document.querySelector('[data-booking-type="host"]');
