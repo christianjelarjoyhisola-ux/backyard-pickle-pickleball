@@ -6,16 +6,16 @@
 // Backyard uses a tenant-scoped connection to the independent shared platform.
 // The explicit backendEnabled flag prevents an unfinished platform from being
 // activated merely by filling in a URL or key.
-const PB_TENANT_CONFIG = window.PB_TENANT_CONFIG || {};
-const PB_TENANT_SLUG = String(PB_TENANT_CONFIG.tenantSlug || 'backyard-pickle');
-const PB_AUTH_ENABLED = PB_TENANT_CONFIG.authEnabled === true;
-const PB_BACKEND_ENABLED = PB_TENANT_CONFIG.backendEnabled === true;
+const PB_RUNTIME_CONFIG = window.PB_TENANT_CONFIG || {};
+const PB_TENANT_SLUG = String(PB_RUNTIME_CONFIG.tenantSlug || 'backyard-pickle');
+const PB_AUTH_ENABLED = PB_RUNTIME_CONFIG.authEnabled === true;
+const PB_BACKEND_ENABLED = PB_RUNTIME_CONFIG.backendEnabled === true;
 const PB_SUPABASE_CONNECTION_ENABLED = PB_AUTH_ENABLED || PB_BACKEND_ENABLED;
 const SUPABASE_URL = PB_SUPABASE_CONNECTION_ENABLED
-  ? String(PB_TENANT_CONFIG.supabaseUrl || '')
+  ? String(PB_RUNTIME_CONFIG.supabaseUrl || '')
   : 'https://YOUR_PLATFORM_PROJECT_REF.supabase.co';
 const SUPABASE_ANON_KEY = PB_SUPABASE_CONNECTION_ENABLED
-  ? String(PB_TENANT_CONFIG.supabasePublishableKey || '')
+  ? String(PB_RUNTIME_CONFIG.supabasePublishableKey || '')
   : 'YOUR_PLATFORM_PUBLISHABLE_KEY';
 const PB_SUPABASE_CREDENTIALS_CONFIGURED =
   !SUPABASE_URL.includes('YOUR_PLATFORM_PROJECT_REF') &&
@@ -27,9 +27,9 @@ const PB_SUPABASE_CONFIGURED =
 window.PB_SUPABASE_CONFIGURED = PB_SUPABASE_CONFIGURED;
 window.PB_SUPABASE_AUTH_CONFIGURED = PB_SUPABASE_AUTH_CONFIGURED;
 window.PB_PUBLIC_BOOKING_ENABLED =
-  PB_TENANT_CONFIG.publicBookingEnabled === true && PB_SUPABASE_CONFIGURED;
+  PB_RUNTIME_CONFIG.publicBookingEnabled === true && PB_SUPABASE_CONFIGURED;
 window.PB_HOST_PORTAL_ENABLED =
-  PB_TENANT_CONFIG.hostPortalEnabled === true && PB_SUPABASE_CONFIGURED;
+  PB_RUNTIME_CONFIG.hostPortalEnabled === true && PB_SUPABASE_CONFIGURED;
 window.PB_TENANT_SLUG = PB_TENANT_SLUG;
 
 const PB_REQUEST_TIMEOUT_MS = 45000;
@@ -2844,7 +2844,7 @@ window.Auth = {
       {
         p_tenant_slug: PB_TENANT_SLUG,
         p_hostname: PB_IS_LOCAL_HOST
-          ? String(PB_TENANT_CONFIG.productionHosts?.[0] || window.location.hostname)
+          ? String(PB_RUNTIME_CONFIG.productionHosts?.[0] || window.location.hostname)
           : window.location.hostname,
       }
     );
