@@ -16,7 +16,13 @@
     ]),
     supabaseUrl: 'https://neqvrwtofiolcuxewdze.supabase.co',
     supabasePublishableKey: 'sb_publishable_UHMKYGsygjeMl79VRfPNVw_RyWiV5Yr',
+    // Authentication is activated independently from public booking writes.
+    // This lets approved staff use real Supabase Auth while the remaining
+    // booking/payment rollout stays explicitly disabled.
+    authEnabled: true,
     backendEnabled: false,
+    publicBookingEnabled: false,
+    hostPortalEnabled: false,
   });
 
   Object.defineProperty(global, 'PB_TENANT_CONFIG', {

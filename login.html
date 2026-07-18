@@ -102,7 +102,6 @@ button,input,select,textarea,label,a,[role="button"],.btn{touch-action:manipulat
   </div>
 
   <a class="back" href="index.html">← Back to Booking Page</a>
-  <a class="back" href="host.html">Open Play Host Portal</a>
 </div>
 
 <script>
@@ -119,13 +118,21 @@ async function doLogin(e) {
   btn.disabled = true;
   btn.textContent = 'Logging in…';
   const remember = document.getElementById('rememberMe').checked;
-  const r = await Auth.login(u, p, remember);
-  if (r.ok) {
-    const params = new URLSearchParams(window.location.search);
-    window.location.href = params.get('next') || 'admin.html';
-  } else {
+  try {
+    const r = await Auth.login(u, p, remember);
+    if (r.ok) {
+      // Never navigate to a caller-supplied URL after authentication.
+      const requested = new URLSearchParams(window.location.search).get('next');
+      window.location.href = requested === 'admin.html' ? requested : 'admin.html';
+      return;
+    }
     document.getElementById('errBox').textContent = r.msg || 'Invalid email or password.';
     document.getElementById('errBox').classList.add('show');
+  } catch (error) {
+    console.error('Dashboard login failed:', error);
+    document.getElementById('errBox').textContent = 'Could not sign in right now. Please check your connection and try again.';
+    document.getElementById('errBox').classList.add('show');
+  } finally {
     btn.disabled = false;
     btn.textContent = 'Login to Dashboard →';
   }
@@ -184,7 +191,7 @@ async function doSetPassword() {
 }
 </script>
 <script src="supabase.min.js"></script>
-<script src="tenant-config.js?v=20260718-platform-isolation-v1"></script>
-<script src="supabase-config.js?v=20260718-platform-isolation-v1"></script>
+<script src="tenant-config.js?v=20260718-auth-activation-v1"></script>
+<script src="supabase-config.js?v=20260718-auth-activation-v1"></script>
 </body>
 </html>

@@ -2101,6 +2101,10 @@ tr:hover td { background: var(--bg2); }
   </aside>
 
   <div class="main">
+    <div id="authOnlyBanner" style="display:none;align-items:flex-start;gap:10px;margin:14px 18px 0;padding:12px 14px;border:1px solid rgba(var(--yellow-rgb),.38);border-radius:12px;background:rgba(var(--yellow-rgb),.09);color:var(--text2);font-size:.78rem;line-height:1.45">
+      <span aria-hidden="true">&#128274;</span>
+      <span><strong style="color:var(--text)">Secure admin login is active.</strong> Booking data is still in controlled preview mode, so changes shown here are not production bookings yet.</span>
+    </div>
     <div class="topbar">
       <h2 id="topTitle">Dashboard</h2>
     </div>
@@ -10680,20 +10684,30 @@ function updateThemeBtn() {
 function logout(){ Auth.logout(); }
 
 document.addEventListener('DOMContentLoaded', async ()=>{
+  const authOnlyBanner = $('authOnlyBanner');
+  if (authOnlyBanner && window.PB_SUPABASE_AUTH_CONFIGURED && window.PB_USE_LOCAL_DATA) {
+    authOnlyBanner.style.display = 'flex';
+  }
   // Local demo data can use a browser-only owner session. When localhost is
   // connected to the live Supabase project, require real Supabase Auth so RLS
   // permits settings writes such as platform rate changes.
   const isLocalDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-  const allowLocalBypass = isLocalDev && window.PB_USE_LOCAL_DATA;
+  const allowLocalBypass = isLocalDev && window.PB_USE_LOCAL_DATA && !window.PB_SUPABASE_AUTH_CONFIGURED;
   if (allowLocalBypass && !Auth.getSession()) {
     const devSession = { id: 'owner_001', email: 'owner@backyard-pickle.local', role: 'owner', fullName: 'System Owner', loginAt: new Date().toISOString(), isLocalData: true };
     localStorage.setItem('pb_session', JSON.stringify(devSession));
     localStorage.setItem('pb_remember', '1');
   }
   if (!allowLocalBypass) {
-    // Verify real Supabase Auth and rebuild browser session from the accounts table.
-    // Browser storage is only a cache; it is not trusted for role selection.
-    const verifiedSession = await Auth.refreshSessionFromAuth();
+    // Verify real Supabase Auth and rebuild the browser session from the
+    // tenant-scoped membership RPC. Browser storage is never trusted for role
+    // selection.
+    let verifiedSession = null;
+    try {
+      verifiedSession = await Auth.refreshSessionFromAuth();
+    } catch (error) {
+      console.error('Dashboard session verification failed:', error);
+    }
     if (!verifiedSession) {
       localStorage.removeItem('pb_session');
       sessionStorage.removeItem('pb_session');
@@ -11048,7 +11062,7 @@ async function checkAgreementGate(session) {
 </script>
 
 <script src="supabase.min.js"></script>
-<script src="tenant-config.js?v=20260718-platform-isolation-v1"></script>
-<script src="supabase-config.js?v=20260718-platform-isolation-v1"></script>
+<script src="tenant-config.js?v=20260718-auth-activation-v1"></script>
+<script src="supabase-config.js?v=20260718-auth-activation-v1"></script>
 </body>
 </html>

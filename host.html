@@ -96,9 +96,13 @@ textarea.fi{min-height:82px;resize:vertical}
 </main>
 
 <script src="supabase.min.js"></script>
-  <script src="tenant-config.js?v=20260718-platform-isolation-v1"></script>
-  <script src="supabase-config.js?v=20260718-platform-isolation-v1"></script>
+  <script src="tenant-config.js?v=20260718-auth-activation-v1"></script>
+  <script src="supabase-config.js?v=20260718-auth-activation-v1"></script>
 <script>
+if (!window.PB_HOST_PORTAL_ENABLED) {
+  window.location.replace('index.html');
+}
+
 const dark = localStorage.getItem('pb_template_theme') === 'dark';
 document.body.classList.toggle('dark', dark);
 document.body.classList.toggle('light', !dark);

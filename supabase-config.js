@@ -8,17 +8,28 @@
 // activated merely by filling in a URL or key.
 const PB_TENANT_CONFIG = window.PB_TENANT_CONFIG || {};
 const PB_TENANT_SLUG = String(PB_TENANT_CONFIG.tenantSlug || 'backyard-pickle');
-const SUPABASE_URL = PB_TENANT_CONFIG.backendEnabled
+const PB_AUTH_ENABLED = PB_TENANT_CONFIG.authEnabled === true;
+const PB_BACKEND_ENABLED = PB_TENANT_CONFIG.backendEnabled === true;
+const PB_SUPABASE_CONNECTION_ENABLED = PB_AUTH_ENABLED || PB_BACKEND_ENABLED;
+const SUPABASE_URL = PB_SUPABASE_CONNECTION_ENABLED
   ? String(PB_TENANT_CONFIG.supabaseUrl || '')
   : 'https://YOUR_PLATFORM_PROJECT_REF.supabase.co';
-const SUPABASE_ANON_KEY = PB_TENANT_CONFIG.backendEnabled
+const SUPABASE_ANON_KEY = PB_SUPABASE_CONNECTION_ENABLED
   ? String(PB_TENANT_CONFIG.supabasePublishableKey || '')
   : 'YOUR_PLATFORM_PUBLISHABLE_KEY';
-const PB_SUPABASE_CONFIGURED =
-  PB_TENANT_CONFIG.backendEnabled === true &&
+const PB_SUPABASE_CREDENTIALS_CONFIGURED =
   !SUPABASE_URL.includes('YOUR_PLATFORM_PROJECT_REF') &&
   !SUPABASE_ANON_KEY.includes('YOUR_PLATFORM_PUBLISHABLE_KEY');
+const PB_SUPABASE_AUTH_CONFIGURED =
+  PB_AUTH_ENABLED && PB_SUPABASE_CREDENTIALS_CONFIGURED;
+const PB_SUPABASE_CONFIGURED =
+  PB_BACKEND_ENABLED && PB_SUPABASE_CREDENTIALS_CONFIGURED;
 window.PB_SUPABASE_CONFIGURED = PB_SUPABASE_CONFIGURED;
+window.PB_SUPABASE_AUTH_CONFIGURED = PB_SUPABASE_AUTH_CONFIGURED;
+window.PB_PUBLIC_BOOKING_ENABLED =
+  PB_TENANT_CONFIG.publicBookingEnabled === true && PB_SUPABASE_CONFIGURED;
+window.PB_HOST_PORTAL_ENABLED =
+  PB_TENANT_CONFIG.hostPortalEnabled === true && PB_SUPABASE_CONFIGURED;
 window.PB_TENANT_SLUG = PB_TENANT_SLUG;
 
 const PB_REQUEST_TIMEOUT_MS = 45000;
@@ -44,10 +55,36 @@ async function _pbFetchWithTimeout(input, init = {}, timeoutMs = PB_REQUEST_TIME
   }
 }
 
+// Keep Supabase Auth in the selected browser scope. Session storage is used
+// unless the user explicitly chooses "Keep me logged in".
+const PB_AUTH_REMEMBER_KEY = 'pb_remember';
+const _pbAuthStorage = {
+  getItem(key) {
+    return localStorage.getItem(key) || sessionStorage.getItem(key);
+  },
+  setItem(key, value) {
+    const remember = localStorage.getItem(PB_AUTH_REMEMBER_KEY) === '1';
+    const target = remember ? localStorage : sessionStorage;
+    const other = remember ? sessionStorage : localStorage;
+    target.setItem(key, value);
+    other.removeItem(key);
+  },
+  removeItem(key) {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  },
+};
+
 // Initialize Supabase client (uses UMD global loaded from CDN). A bounded
 // fetch prevents embedded browsers from leaving the booking button hanging.
 const _sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   global: { fetch: (input, init) => _pbFetchWithTimeout(input, init) },
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storage: _pbAuthStorage,
+  },
 });
 
 // Expose globally so HTML pages can use real-time subscriptions
@@ -66,9 +103,9 @@ if (PB_IS_LOCAL_HOST) {
   }
 }
 
-// Until a dedicated Backyard Pickle project is connected, run the published
-// site as a browser-only preview. This keeps it isolated from every other
-// court's data and makes the static Cloudflare deployment fully usable.
+// Authentication and booking data are activated separately. Until the full
+// tenant booking backend is approved, public/admin data stays in preview mode
+// while dashboard identity is still verified by Supabase Auth.
 window.PB_USE_LOCAL_DATA = !PB_SUPABASE_CONFIGURED ||
   (PB_IS_LOCAL_HOST && localStorage.getItem(PB_DATA_MODE_KEY) === 'local');
 
@@ -2790,6 +2827,10 @@ window.Auth = {
   },
 
   async refreshSessionFromAuth({ remember = null } = {}) {
+    if (!PB_SUPABASE_AUTH_CONFIGURED) {
+      this._lastLoginMessage = 'Dashboard authentication is not configured.';
+      return null;
+    }
     const { data: authData, error } = await _sb.auth.getUser();
     if (error || !authData?.user) {
       this._lastLoginMessage = error
@@ -2798,14 +2839,18 @@ window.Auth = {
       return null;
     }
 
-    const { data: acc, error: accountErr } = await _sb
-      .from('accounts')
-      .select('*')
-      .eq('id', authData.user.id)
-      .maybeSingle();
+    const { data: acc, error: accountErr } = await _sb.rpc(
+      'get_my_tenant_session',
+      {
+        p_tenant_slug: PB_TENANT_SLUG,
+        p_hostname: PB_IS_LOCAL_HOST
+          ? String(PB_TENANT_CONFIG.productionHosts?.[0] || window.location.hostname)
+          : window.location.hostname,
+      }
+    );
 
     if (accountErr) {
-      console.error('refreshSessionFromAuth account lookup:', accountErr);
+      console.error('refreshSessionFromAuth tenant session lookup:', accountErr);
       this._lastLoginMessage = 'Could not verify your account status right now. Please try again in a moment.';
       sessionStorage.removeItem('pb_session');
       localStorage.removeItem('pb_session');
@@ -2827,7 +2872,18 @@ window.Auth = {
       return null;
     }
 
-    const session = { ...rowToAccount(acc), loginAt: new Date().toISOString() };
+    const role = acc.role === 'admin' ? 'court_owner' : acc.role;
+    const session = {
+      id: acc.id || authData.user.id,
+      tenantId: acc.tenantId || null,
+      tenantSlug: acc.tenantSlug || PB_TENANT_SLUG,
+      username: acc.username || String(acc.email || authData.user.email || '').split('@')[0],
+      role,
+      status: acc.status || 'active',
+      fullName: acc.fullName || authData.user.user_metadata?.full_name || authData.user.email || 'Account',
+      email: acc.email || authData.user.email || '',
+      loginAt: new Date().toISOString(),
+    };
 
     if (session.status && session.status !== 'active') {
       this._lastLoginMessage = session.status === 'pending'
@@ -2850,9 +2906,14 @@ window.Auth = {
   },
 
   async login(email, password, remember = false) {
-    // Sign in via Supabase Auth — establishes a verified JWT session.
+    // Select the storage scope before Supabase writes its verified JWT.
+    if (remember) localStorage.setItem(PB_AUTH_REMEMBER_KEY, '1');
+    else localStorage.removeItem(PB_AUTH_REMEMBER_KEY);
     const { data, error } = await _sb.auth.signInWithPassword({ email, password });
-    if (error || !data.user) return { ok: false, msg: error?.message || 'Invalid email or password.' };
+    if (error || !data.user) {
+      localStorage.removeItem(PB_AUTH_REMEMBER_KEY);
+      return { ok: false, msg: error?.message || 'Invalid email or password.' };
+    }
     this._lastLoginMessage = '';
     const session = await this.refreshSessionFromAuth({ remember });
     return session ? { ok: true } : { ok: false, msg: this._lastLoginMessage || 'Account is not active.' };
@@ -2953,7 +3014,9 @@ window.Auth = {
   },
 };
 
-if (window.PB_USE_LOCAL_DATA) {
+// Local credential fallback is for disconnected development only. A deployed
+// site with auth enabled must never accept the browser's sample accounts.
+if (window.PB_USE_LOCAL_DATA && !PB_SUPABASE_AUTH_CONFIGURED) {
   Object.assign(window.Auth, {
     async login(usernameOrEmail, password, remember = false) {
       const accounts = await DB.getAccounts();

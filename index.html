@@ -6107,6 +6107,10 @@ async function proceedToBookLegacy(courtId) {
 }
 
 async function proceedToBook(courtId = null) {
+  if (!window.PB_PUBLIC_BOOKING_ENABLED) {
+    toast('Online booking is not live yet. Please call 0915 393 4597 for assistance.', 'inf');
+    return;
+  }
   const selections = cardSelectionList();
   if (selections.length === 0) {
     toast('Please select at least one time slot.', 'inf');
@@ -7595,6 +7599,10 @@ async function submitBookingLegacy(e) {
 
 async function submitBooking(e) {
   if (e) e.preventDefault();
+  if (!window.PB_PUBLIC_BOOKING_ENABLED) {
+    toast('Online booking is not live yet. Please call 0915 393 4597 for assistance.', 'inf');
+    return;
+  }
   const submitBtn = $('wizNextBtn');
   if (submitBtn?.disabled) return;
 
@@ -9156,8 +9164,8 @@ async function submitOpenPlay() {
 }
 </script>
 <script src="supabase.min.js"></script>
-<script src="tenant-config.js?v=20260718-platform-isolation-v1"></script>
-<script src="supabase-config.js?v=20260718-platform-isolation-v1"></script>
+<script src="tenant-config.js?v=20260718-auth-activation-v1"></script>
+<script src="supabase-config.js?v=20260718-auth-activation-v1"></script>
 
 <!-- MOBILE STICKY BOOK NOW BAR -->
 <div id="mobileBookBar" class="mobile-book-bar" style="display:none">
