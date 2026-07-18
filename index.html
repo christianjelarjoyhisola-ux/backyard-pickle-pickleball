@@ -2279,13 +2279,19 @@ body.light #splashScreen { background: #071320; }
   width:17px; height:17px; display:inline-flex; align-items:center; justify-content:center;
   border:1px solid rgba(145,196,60,.42); border-radius:50%; color:#b8de73; font-size:.65rem;
 }
-.sp-actions { display:flex; align-items:center; flex-wrap:wrap; gap:16px; margin-top:24px; animation:spFadeUp .58s ease .56s both; }
+.sp-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; width:100%; max-width:540px; margin-top:24px; animation:spFadeUp .58s ease .56s both; }
 .sp-start-btn {
-  min-width:232px; min-height:54px; padding:0 24px; display:inline-flex; align-items:center; justify-content:center; gap:12px;
+  min-width:0; min-height:58px; padding:9px 14px; display:flex; align-items:center; justify-content:flex-start; gap:10px;
   border:1px solid rgba(216,245,152,.2); border-radius:14px; cursor:pointer; background:linear-gradient(135deg,#6ca431,#4f7f25); color:#fff;
-  font-family:'Outfit',sans-serif; font-size:.92rem; font-weight:850; box-shadow:0 12px 30px rgba(79,127,37,.32);
+  font-family:'Outfit',sans-serif; text-align:left; box-shadow:0 12px 30px rgba(79,127,37,.32);
   transition:transform .2s ease,box-shadow .2s ease,filter .2s ease;
 }
+.sp-start-btn.event { border-color:rgba(145,196,60,.42); background:rgba(255,255,255,.055); box-shadow:none; }
+.sp-start-btn.event:hover { background:rgba(145,196,60,.11); box-shadow:0 14px 30px rgba(0,0,0,.18); }
+.sp-btn-icon { flex:0 0 auto; font-size:1.15rem; }
+.sp-btn-copy { min-width:0; flex:1; }
+.sp-btn-copy strong { display:block; color:#fff; font-size:.84rem; font-weight:900; line-height:1.15; }
+.sp-btn-copy small { display:block; margin-top:3px; color:rgba(255,255,255,.72); font-size:.6rem; font-weight:700; line-height:1.2; }
 .sp-start-btn:hover { transform:translateY(-2px); box-shadow:0 18px 38px rgba(79,127,37,.4); filter:brightness(1.05); }
 .sp-start-btn:focus-visible { outline:3px solid #b8de73; outline-offset:4px; }
 .sp-start-btn svg { width:18px; height:18px; transition:transform .2s ease; }
@@ -2377,7 +2383,7 @@ body.light #splashScreen { background: #071320; }
   .sp-title { font-size:clamp(2.8rem,14vw,4.2rem); line-height:.91; }
   .sp-lead { margin-top:14px; font-size:.82rem; line-height:1.5; }
   .sp-trust { gap:8px 14px; margin-top:16px; font-size:.63rem; }
-  .sp-actions { margin-top:18px; }
+  .sp-actions { grid-template-columns:1fr; gap:7px; margin-top:18px; }
   .sp-start-btn { width:100%; }
   .sp-action-note { display:none; }
   .sp-contact { display:grid; grid-template-columns:1fr 1fr; width:100%; margin-top:10px; }
@@ -2398,6 +2404,11 @@ body.light #splashScreen { background: #071320; }
 }
 @media (max-width:480px) and (max-height:560px) {
   .sp-trust { display:none; }
+  .sp-actions { grid-template-columns:1fr 1fr; }
+  .sp-btn-icon { display:none; }
+  .sp-start-btn { min-height:46px; padding:7px 9px; }
+  .sp-btn-copy strong { font-size:.72rem; }
+  .sp-btn-copy small { font-size:.54rem; }
 }
 @media (prefers-reduced-motion:reduce) {
   .sp-shell,.sp-logo-img,.sp-brand,.sp-eyebrow,.sp-title,.sp-lead,.sp-trust,.sp-actions,.sp-contact,.sp-ball,.sp-glow { animation:none!important; }
@@ -2880,17 +2891,22 @@ body.host-mode .courts { padding-bottom:140px; }
       </div>
       <div class="sp-eyebrow">Backyard Pickle reservations</div>
       <h1 class="sp-title" id="splashTitle">YOUR COURT.<br/><span>YOUR TIME.</span><br/>LET'S PLAY.</h1>
-      <p class="sp-lead">See live availability, choose your court and time, and reserve in a few quick taps.</p>
+      <p class="sp-lead">Choose a regular court booking or plan a private event in a few quick taps.</p>
       <div class="sp-trust" aria-label="Booking highlights">
         <span><i class="sp-trust-dot" aria-hidden="true"></i> Live court schedules</span>
         <span><i class="sp-trust-check" aria-hidden="true">✓</i> No account required</span>
       </div>
       <div class="sp-actions">
-        <button type="button" class="sp-start-btn" onclick="dismissSplash()">
-          Check Court Availability
+        <button type="button" class="sp-start-btn" onclick="startBookingFromSplash('regular')" aria-label="Book the Main Court at regular hourly rates">
+          <span class="sp-btn-icon" aria-hidden="true">🏓</span>
+          <span class="sp-btn-copy"><strong>Book a Court</strong><small>₱200–₱280 per hour</small></span>
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <div class="sp-action-note"><strong>Quick booking</strong><br/>Choose a court + time</div>
+        <button type="button" class="sp-start-btn event" onclick="startBookingFromSplash('event')" aria-label="Book an event package with a four-hour minimum">
+          <span class="sp-btn-icon" aria-hidden="true">🎉</span>
+          <span class="sp-btn-copy"><strong>Book an Event</strong><small>4+ hours · ₱380 per hour</small></span>
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
       </div>
       <nav class="sp-contact" aria-label="Contact Backyard Pickle">
         <span class="sp-contact-label">Need help?</span>
@@ -3045,10 +3061,10 @@ body.host-mode .courts { padding-bottom:140px; }
   </div>
   <div class="booking-mode-switch" role="tablist" aria-label="Booking type">
     <button class="booking-mode-btn active" id="regularModeBtn" type="button" role="tab" aria-selected="true" onclick="setBookingMode('regular')">
-      <strong>🏓 Regular Booking</strong><span>Standard hourly court rates</span>
+      <strong>🏓 Book a Court</strong><span>₱200–₱280 per hour</span>
     </button>
     <button class="booking-mode-btn" id="eventModeBtn" type="button" role="tab" aria-selected="false" onclick="setBookingMode('event')">
-      <strong>🎉 Event Package</strong><span>4+ hours · ₱380/hour</span>
+      <strong>🎉 Book an Event</strong><span>4+ hours · ₱380 per hour</span>
     </button>
   </div>
   <div class="event-package-info" id="eventPackageInfo">
@@ -8377,6 +8393,13 @@ function dismissSplash() {
   sp.classList.add('dismissed');
   document.body.style.overflow = '';
   sp.addEventListener('transitionend', () => { sp.style.display = 'none'; }, { once: true });
+}
+async function startBookingFromSplash(mode) {
+  dismissSplash();
+  await setBookingMode(mode);
+  window.setTimeout(() => {
+    document.getElementById('courts')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 280);
 }
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && isSplashActive()) dismissSplash();
