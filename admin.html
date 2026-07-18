@@ -2983,7 +2983,7 @@ tr:hover td { background: var(--bg2); }
       </div>
 
       <!-- BOOKING FEE — System Owner only -->
-      <div class="panel" data-perm="owner_only" style="max-width:680px;margin-bottom:20px;border:2px solid var(--green);">
+      <div class="panel" id="platformBillingPanel" data-perm="owner_only" style="max-width:680px;margin-bottom:20px;border:2px solid var(--green);">
         <h4>💰 Booking Fee <span style="font-size:.72rem;background:var(--green-bg);color:var(--green);padding:2px 8px;border-radius:8px;margin-left:8px;font-family:'DM Mono',monospace;letter-spacing:1px">SYSTEM OWNER</span></h4>
         <p style="color:var(--muted);font-size:.84rem;margin:8px 0 12px">Player-paid booking fee added at checkout as your system revenue. Court owners collect it with each eligible booking and remit the accumulated balance on the 14th using an exact payment-time cutoff.</p>
         <div class="fg" style="margin-bottom:16px">
@@ -3009,8 +3009,59 @@ tr:hover td { background: var(--bg2); }
         <div id="maintRateSummary" style="margin-top:12px;padding:10px 14px;background:var(--input);border:1px solid var(--border);border-radius:8px;font-size:.84rem;color:var(--muted);display:none"></div>
       </div>
 
+      <!-- Authoritative tenant activation settings. Visible only when this
+           dashboard is connected to the multi-tenant production platform. -->
+      <div class="panel" id="platformTenantSettingsPanel" style="display:none;max-width:980px;margin-bottom:20px;border:1.5px solid rgba(var(--green-rgb),.35)">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+          <div>
+            <h4 style="margin:0">Online Booking Activation</h4>
+            <p style="color:var(--muted);font-size:.84rem;line-height:1.5;margin:7px 0 0;max-width:700px">Manage the venue's live-booking, payment destination, and confirmation-email settings here. Online booking remains closed until the server confirms every required item is ready.</p>
+          </div>
+          <span id="platformBookingReadinessBadge" class="integration-badge warn">Setup required</span>
+        </div>
+
+        <div id="platformBookingReadinessList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-bottom:18px" aria-live="polite"></div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:18px">
+          <label style="display:flex;align-items:flex-start;gap:10px;padding:13px;background:var(--input);border:1px solid var(--border);border-radius:10px;cursor:pointer">
+            <input type="checkbox" id="platformPublicBookingRequested" style="margin-top:3px;accent-color:var(--green)" />
+            <span><strong style="display:block;font-size:.87rem">Accept online bookings</strong><span style="display:block;color:var(--muted);font-size:.74rem;line-height:1.4;margin-top:3px">Requests activation. The public page opens only after the server readiness check passes.</span></span>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:10px;padding:13px;background:var(--input);border:1px solid var(--border);border-radius:10px;cursor:pointer">
+            <input type="checkbox" id="platformEmailEnabled" style="margin-top:3px;accent-color:var(--green)" />
+            <span><strong style="display:block;font-size:.87rem">Send booking emails</strong><span style="display:block;color:var(--muted);font-size:.74rem;line-height:1.4;margin-top:3px">Send tenant-branded booking and payment messages through the configured mail service.</span></span>
+          </label>
+        </div>
+
+        <div class="frow" style="gap:12px;margin-bottom:18px">
+          <div class="fg" style="margin:0;flex:1">
+            <label class="fl" for="platformReplyToEmail">Court Reply-To Email</label>
+            <input type="email" class="fi" id="platformReplyToEmail" autocomplete="email" placeholder="owner@court-domain.com" />
+            <div style="font-size:.72rem;color:var(--muted);margin-top:4px">Customer replies are sent to this court-managed address.</div>
+          </div>
+          <div class="fg" style="margin:0;flex:1">
+            <label class="fl">Payment Policy</label>
+            <input class="fi" value="Full payment only (100%)" readonly aria-readonly="true" />
+            <div style="font-size:.72rem;color:var(--muted);margin-top:4px">Bookings are held only while the customer submits full payment proof.</div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <div>
+            <div class="fl" style="margin:0">Customer Payment Methods</div>
+            <div style="font-size:.72rem;color:var(--muted);margin-top:3px">Enable one or more methods and enter the exact account details customers should use.</div>
+          </div>
+        </div>
+        <div id="platformPaymentMethodsBody" style="display:grid;gap:10px"></div>
+
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px">
+          <button class="btn btn-p" id="savePlatformActivationBtn" type="button" onclick="savePlatformActivationSettings()">Save Activation Settings</button>
+          <span id="platformActivationSummary" style="font-size:.78rem;color:var(--muted)">No production values are hardcoded in this website.</span>
+        </div>
+      </div>
+
       <!-- BOOKING FEE REMITTANCE — System Owner only (where court owners send fees) -->
-      <div class="panel" data-perm="owner_only" style="max-width:680px;margin-bottom:20px;border:1.5px solid rgba(255,160,0,.35);background:rgba(255,160,0,.04)">
+      <div class="panel" id="legacyPlatformRemittancePanel" data-perm="owner_only" style="max-width:680px;margin-bottom:20px;border:1.5px solid rgba(255,160,0,.35);background:rgba(255,160,0,.04)">
         <h4>🏦 Booking Fee Remittance Account <span style="font-size:.7rem;background:rgba(255,160,0,.15);color:var(--yellow);padding:2px 8px;border-radius:8px;margin-left:6px;font-family:'DM Mono',monospace;letter-spacing:1px">SYSTEM OWNER</span></h4>
         <p style="color:var(--muted);font-size:.84rem;margin:8px 0 14px">This is the GCash account where court owners remit player-paid booking fees by booking period. Shown to them in the Remit Now dialog.</p>
         <div class="frow" style="gap:10px;margin-bottom:10px;">
@@ -3042,7 +3093,7 @@ tr:hover td { background: var(--bg2); }
         </div>
       </div>
 
-      <div class="panel" style="max-width:680px;margin-bottom:20px;border:1px solid var(--border);">
+      <div class="panel" id="legacyPaymentSettingsPanel" style="max-width:680px;margin-bottom:20px;border:1px solid var(--border);">
         <h4>📲 Payment QR Settings</h4>
         <p style="color:var(--muted);font-size:.84rem;margin:8px 0 16px">
           Update QR codes and merchant details. Changes reflect immediately on the booking form.
@@ -4503,7 +4554,7 @@ let sess;
 const titles={dash:'Dashboard',bookings:'Bookings',deleted:'Deleted Bookings',payreview:'Payment Review',reports:'Reports',courts:'Courts',accounts:'Accounts',remittances:'Remittances',blocked:'Blocked Dates',hosts:'Host Center',gamemgr:'Game Manager',maintenance:'Maintenance',payments:'Payments'};
 const SECTION_PERM={dash:'dashboard',bookings:'bookings',deleted:'owner_only',payreview:'payment_review',reports:'reports',courts:'courts',accounts:'host_accounts_view',remittances:'remittances',blocked:'open_play',hosts:'host_open_play',gamemgr:'open_play',maintenance:'maintenance',payments:'payments'};
 const SECTION_LOADERS={dash:renderDash,bookings:renderBookings,deleted:renderDeletedBookings,payreview:renderPaymentReview,reports:renderReport,courts:renderCourts,accounts:renderAccounts,remittances:renderRemittances,blocked:renderBlocked,hosts:renderHostCenter,gamemgr:renderGameManager,maintenance:renderMaintenance,payments:renderPaymentSettings};
-const PLATFORM_UNSUPPORTED_SECTIONS = new Set(['deleted','accounts','remittances','hosts','gamemgr','maintenance','payments']);
+const PLATFORM_UNSUPPORTED_SECTIONS = new Set(['deleted','accounts','remittances','hosts','gamemgr','maintenance']);
 let _curSection=null;
 async function goto(s){
   if(window.PB_PLATFORM_V1 && PLATFORM_UNSUPPORTED_SECTIONS.has(s)){
@@ -4705,11 +4756,24 @@ async function saveMaintRate() {
   const val = parseFloat($('maintRateInput').value);
   if (isNaN(val) || val < 0) { toast('Please enter a valid rate (0 or more).', 'err'); return; }
   const feeType = document.querySelector('input[name="feeType"]:checked')?.value || 'per_hour';
+  if (window.PB_PLATFORM_V1 && !(await ensureReceiptMfa(saveMaintRate))) return;
   try {
-    await DB.saveSetting('maintenance_fee', String(val));
-    await DB.saveSetting('fee_type', feeType);
+    let savedActivation = null;
+    if (window.PB_PLATFORM_V1) {
+      savedActivation = await DB.saveTenantPlatformBilling({
+        feeMode: feeType === 'flat' ? 'fixed_per_booking' : 'fixed_per_hour',
+        feeAmount: val,
+      });
+    } else {
+      await DB.saveSetting('maintenance_fee', String(val));
+      await DB.saveSetting('fee_type', feeType);
+    }
     _maintRate = val;
     await renderMaintFee();
+    if (savedActivation) {
+      await renderPlatformActivationSettings(savedActivation);
+      renderIntegrationStatus().catch(() => {});
+    }
     const sum = $('maintRateSummary');
     if (sum) {
       sum.style.display = 'block';
@@ -5732,19 +5796,19 @@ async function openMfaModal({ afterSuccess = null } = {}) {
   try {
     const status = await Auth.getMfaStatus();
     if (status.currentLevel === 'aal2') {
-      $('mfaMessage').textContent = 'Two-step verification is active for this session. Sensitive receipt actions are unlocked.';
+      $('mfaMessage').textContent = 'Two-step verification is active for this session. Sensitive payment settings and receipt actions are unlocked.';
       return;
     }
     const verified = status.verifiedFactors[0];
     if (verified) {
       _mfaFactorId = verified.id;
-      $('mfaMessage').textContent = 'Enter the current code from your authenticator app to unlock receipt access.';
+      $('mfaMessage').textContent = 'Enter the current code from your authenticator app to unlock sensitive payment actions.';
       $('mfaCodePanel').style.display = '';
       $('mfaVerifyBtn').style.display = '';
       requestAnimationFrame(() => $('mfaCode')?.focus());
       return;
     }
-    $('mfaMessage').textContent = 'Protect payment receipts by linking an authenticator app. Password login will continue to open ordinary dashboard pages.';
+    $('mfaMessage').textContent = 'Protect payment settings and receipts by linking an authenticator app. Password login will continue to open ordinary dashboard pages.';
     $('mfaEnrollPanel').style.display = '';
   } catch (error) {
     setMfaError(error?.message || 'Could not check two-step verification.');
@@ -7353,11 +7417,28 @@ function fmtH(h) {
   return `${h % 12 || 12}:00 ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-async function renderMaintRateSettings() {
-  const settings = await DB.getSettings();
-  const rate = parseFloat(settings.maintenance_fee ?? settings.service_fee_rate ?? settings.booking_fee ?? '5');
+async function renderMaintRateSettings(activationData = null) {
+  let rate = 0;
+  let feeType = 'per_hour';
+  if (window.PB_PLATFORM_V1) {
+    const activation = activationData || await DB.getTenantActivationSettings();
+    if (!activation.billing) {
+      if ($('maintRateInput')) $('maintRateInput').value = '';
+      const sum = $('maintRateSummary');
+      if (sum) {
+        sum.style.display = 'block';
+        sum.textContent = 'Booking fee is not configured yet. Public booking remains closed.';
+      }
+      return;
+    }
+    rate = Number(activation.billing.feeAmount || 0);
+    feeType = activation.billing.feeMode === 'fixed_per_booking' ? 'flat' : 'per_hour';
+  } else {
+    const settings = await DB.getSettings();
+    rate = parseFloat(settings.maintenance_fee ?? settings.service_fee_rate ?? settings.booking_fee ?? '0') || 0;
+    feeType = normalizePlatformFeeType(settings.fee_type);
+  }
   if ($('maintRateInput')) $('maintRateInput').value = rate;
-  const feeType = normalizePlatformFeeType(settings.fee_type);
   const ftEl = document.querySelector(`input[name="feeType"][value="${feeType}"]`);
   if (ftEl) ftEl.checked = true;
   updateMaintRateLabel();
@@ -7512,6 +7593,177 @@ async function savePricingTiers() {
 /* ==============================================
    PAYMENT SETTINGS
    ============================================== */
+const PLATFORM_PAYMENT_METHOD_DEFINITIONS = Object.freeze([
+  { code: 'gcash', displayName: 'GCash' },
+  { code: 'maya', displayName: 'Maya' },
+  { code: 'bdo', displayName: 'BDO Pay' },
+  { code: 'bpi', displayName: 'BPI' },
+  { code: 'gotyme', displayName: 'GoTyme' },
+  { code: 'pnb', displayName: 'PNB' },
+]);
+let _platformActivation = null;
+
+function platformActivationPaymentMethods(savedMethods = []) {
+  const saved = new Map((savedMethods || []).map(method => [String(method.code || '').toLowerCase(), method]));
+  const definitions = [...PLATFORM_PAYMENT_METHOD_DEFINITIONS];
+  for (const method of (savedMethods || [])) {
+    const code = String(method.code || '').toLowerCase();
+    if (code && !definitions.some(definition => definition.code === code)) {
+      definitions.push({ code, displayName: method.displayName || code.toUpperCase() });
+    }
+  }
+  return definitions.map((definition, index) => ({
+    ...definition,
+    ...(saved.get(definition.code) || {}),
+    code: definition.code,
+    displayName: saved.get(definition.code)?.displayName || definition.displayName,
+    sortOrder: Number(saved.get(definition.code)?.sortOrder ?? index),
+  }));
+}
+
+function renderPlatformPaymentMethods(methods) {
+  const body = $('platformPaymentMethodsBody');
+  if (!body) return;
+  body.innerHTML = methods.map(method => {
+    const code = esc(String(method.code || ''));
+    const name = esc(String(method.displayName || method.code || 'Payment method'));
+    return `<details class="platform-payment-method" data-code="${code}" data-display-name="${name}" ${method.isActive ? 'open' : ''} style="background:var(--input);border:1px solid var(--border);border-radius:11px;padding:0 13px">
+      <summary style="display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none;padding:13px 0">
+        <strong style="font-size:.87rem">${name}</strong>
+        <label onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:7px;font-size:.76rem;color:var(--muted);cursor:pointer">
+          <input class="platform-method-active" type="checkbox" ${method.isActive ? 'checked' : ''} style="accent-color:var(--green)" /> Enabled
+        </label>
+      </summary>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;padding:0 0 13px">
+        <div class="fg" style="margin:0"><label class="fl">Account Name</label><input class="fi platform-method-account-name" maxlength="120" value="${esc(method.accountName || '')}" placeholder="Exact receiving account name" /></div>
+        <div class="fg" style="margin:0"><label class="fl">Account Number / Reference</label><input class="fi platform-method-account-reference" maxlength="120" value="${esc(method.accountReference || '')}" placeholder="Mobile or account number" /></div>
+        <div class="fg" style="margin:0;grid-column:1/-1"><label class="fl">QR Image HTTPS URL (optional)</label><input class="fi platform-method-qr-url" type="url" maxlength="500" value="${esc(method.qrImageUrl || '')}" placeholder="https://..." /><div style="font-size:.7rem;color:var(--muted);margin-top:4px">Use a secure hosted image URL. Browser-only base64 images are not saved.</div></div>
+        <div class="fg" style="margin:0;grid-column:1/-1"><label class="fl">Payment Instructions</label><textarea class="fi platform-method-instructions" maxlength="1000" rows="2" style="resize:vertical" placeholder="Reference format or payment reminder">${esc(method.instructions || '')}</textarea></div>
+      </div>
+    </details>`;
+  }).join('');
+}
+
+function platformActivationReadinessChecks(activation) {
+  const methods = activation.paymentMethods || [];
+  const paymentReady = methods.some(method => method.isActive && (
+    method.accountReference || method.instructions || method.qrImageUrl
+  ));
+  const emailReady = !activation.tenant?.emailEnabled || !!activation.tenant?.replyToEmail;
+  const readiness = activation.readiness || {};
+  return [
+    { label: 'Online booking requested', ok: readiness.requestedPublicBookingEnabled ?? (activation.tenant?.publicBookingRequested === true) },
+    { label: 'Booking fee saved', ok: readiness.billingConfigured ?? !!activation.billing },
+    { label: 'Payment destination saved', ok: readiness.paymentConfigured ?? paymentReady },
+    { label: 'Email setting complete', ok: readiness.emailConfigured ?? emailReady },
+    { label: 'Server readiness approved', ok: readiness.publicBookingEnabled === true },
+  ];
+}
+
+async function renderPlatformActivationSettings(activation = null) {
+  const panel = $('platformTenantSettingsPanel');
+  if (!panel || !window.PB_PLATFORM_V1) return;
+  panel.style.display = '';
+  _platformActivation = activation || await DB.getTenantActivationSettings();
+  const canManageBilling = _platformActivation.permissions?.canManagePlatformBilling === true;
+  if ($('platformBillingPanel')) $('platformBillingPanel').style.display = canManageBilling ? '' : 'none';
+  $('platformPublicBookingRequested').checked = _platformActivation.tenant?.publicBookingRequested === true;
+  $('platformEmailEnabled').checked = _platformActivation.tenant?.emailEnabled === true;
+  $('platformReplyToEmail').value = _platformActivation.tenant?.replyToEmail || '';
+  const methods = platformActivationPaymentMethods(_platformActivation.paymentMethods);
+  renderPlatformPaymentMethods(methods);
+
+  const checks = platformActivationReadinessChecks(_platformActivation);
+  const list = $('platformBookingReadinessList');
+  list.innerHTML = checks.map(check => `<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;background:${check.ok ? 'rgba(var(--green-rgb),.08)' : 'rgba(255,160,0,.07)'};border:1px solid ${check.ok ? 'rgba(var(--green-rgb),.24)' : 'rgba(255,160,0,.24)'};border-radius:9px;font-size:.76rem;color:var(--text2)"><span aria-hidden="true" style="color:${check.ok ? 'var(--green)' : 'var(--yellow)'}">${check.ok ? '&#10003;' : '&#8226;'}</span><span>${esc(check.label)}</span></div>`).join('');
+  const serverReady = _platformActivation.readiness?.publicBookingEnabled === true;
+  const badge = $('platformBookingReadinessBadge');
+  badge.className = `integration-badge ${serverReady ? 'ok' : 'warn'}`;
+  badge.textContent = serverReady ? 'Ready for online booking' : 'Setup required';
+  const readinessReasonLabels = {
+    PLATFORM_BILLING_MISSING: 'booking fee not configured',
+    PAYMENT_METHOD_MISSING: 'active payment account not configured',
+  };
+  const reasons = Array.isArray(_platformActivation.readiness?.blockingReasons)
+    ? _platformActivation.readiness.blockingReasons.map(reason =>
+      readinessReasonLabels[String(reason)] || String(reason).replace(/[_-]+/g, ' ').toLowerCase().trim()
+    ).filter(Boolean)
+    : [];
+  $('platformActivationSummary').textContent = serverReady
+    ? 'The server has approved this tenant for online booking.'
+    : reasons.length
+      ? `Still required: ${reasons.join(', ')}.`
+      : 'Saved settings are checked by the server before public booking can open.';
+}
+
+function collectPlatformPaymentMethods() {
+  return [...document.querySelectorAll('.platform-payment-method')].map((row, index) => ({
+    code: row.dataset.code || '',
+    displayName: row.dataset.displayName || '',
+    accountName: row.querySelector('.platform-method-account-name')?.value.trim() || '',
+    accountReference: row.querySelector('.platform-method-account-reference')?.value.trim() || '',
+    qrImageUrl: row.querySelector('.platform-method-qr-url')?.value.trim() || '',
+    instructions: row.querySelector('.platform-method-instructions')?.value.trim() || '',
+    isActive: row.querySelector('.platform-method-active')?.checked === true,
+    sortOrder: index,
+  }));
+}
+
+async function savePlatformActivationSettings() {
+  if (!window.PB_PLATFORM_V1 || !Auth.can('payments', sess.role)) {
+    toast('You do not have access to edit activation settings.', 'err');
+    return;
+  }
+  const publicBookingRequested = $('platformPublicBookingRequested').checked;
+  const emailEnabled = $('platformEmailEnabled').checked;
+  const replyToEmail = $('platformReplyToEmail').value.trim();
+  const paymentMethods = collectPlatformPaymentMethods();
+  if (emailEnabled && !replyToEmail) {
+    toast('Enter the court Reply-To email before enabling booking emails.', 'err');
+    $('platformReplyToEmail').focus();
+    return;
+  }
+  if (publicBookingRequested && !paymentMethods.some(method => method.isActive)) {
+    toast('Enable at least one payment method before requesting online booking.', 'err');
+    return;
+  }
+  const billingReady = _platformActivation?.readiness?.billingConfigured ?? !!_platformActivation?.billing;
+  if (publicBookingRequested && !billingReady) {
+    toast('Save the platform booking fee before requesting online booking.', 'err');
+    return;
+  }
+  const incompleteMethod = paymentMethods.find(method => method.isActive && (
+    !method.accountName || !method.accountReference
+  ));
+  if (incompleteMethod) {
+    toast(`${incompleteMethod.displayName} needs both the account name and account number.`, 'err');
+    return;
+  }
+  if (!(await ensureReceiptMfa(savePlatformActivationSettings))) return;
+  const button = $('savePlatformActivationBtn');
+  button.disabled = true;
+  button.textContent = 'Saving...';
+  try {
+    const savedActivation = await DB.saveTenantActivationSettings({
+      publicBookingRequested,
+      emailEnabled,
+      replyToEmail,
+      paymentMethods,
+    });
+    await renderPlatformActivationSettings(savedActivation);
+    await renderIntegrationStatus();
+    toast(window.PB_PUBLIC_BOOKING_ENABLED
+      ? 'Activation settings saved. Online booking is ready.'
+      : 'Activation settings saved. The server readiness check is still required.');
+  } catch (error) {
+    console.error('savePlatformActivationSettings:', error);
+    toast(error.message || 'Failed to save activation settings.', 'err');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Save Activation Settings';
+  }
+}
+
 async function renderIntegrationStatus() {
   const body = $('integrationStatusBody');
   if (!body) return;
@@ -7546,6 +7798,16 @@ async function renderIntegrationStatus() {
 
 async function renderPaymentSettings() {
   if (!Auth.can('payments', sess.role)) { toast('You do not have access to this section.', 'err'); return; }
+  if (window.PB_PLATFORM_V1) {
+    if ($('legacyPaymentSettingsPanel')) $('legacyPaymentSettingsPanel').style.display = 'none';
+    const activation = await DB.getTenantActivationSettings();
+    await renderMaintRateSettings(activation);
+    await renderPlatformActivationSettings(activation);
+    renderIntegrationStatus().catch(() => {});
+    return;
+  }
+  if ($('legacyPaymentSettingsPanel')) $('legacyPaymentSettingsPanel').style.display = '';
+  if ($('platformTenantSettingsPanel')) $('platformTenantSettingsPanel').style.display = 'none';
   const settings = await DB.getSettings();
   const cashOn = settings.payment_method_cash !== '0';
   const gcashOn = settings.payment_method_gcash !== '0';
@@ -11022,6 +11284,7 @@ function applyPlatformVisibility() {
   });
   if ($('maintFeePanel')) $('maintFeePanel').style.display = 'none';
   if ($('addCourtBtn')) $('addCourtBtn').style.display = 'none';
+  if ($('legacyPlatformRemittancePanel')) $('legacyPlatformRemittancePanel').style.display = 'none';
 }
 </script>
 <!-- ============================================================

@@ -30,8 +30,13 @@ const PB_SUPABASE_CONFIGURED =
   PB_BACKEND_ENABLED && PB_SUPABASE_CREDENTIALS_CONFIGURED;
 window.PB_SUPABASE_CONFIGURED = PB_SUPABASE_CONFIGURED;
 window.PB_SUPABASE_AUTH_CONFIGURED = PB_SUPABASE_AUTH_CONFIGURED;
-window.PB_PUBLIC_BOOKING_ENABLED =
+// The deploy-time switch is only a request to enable booking. The server must
+// independently report that the tenant is ready (billing, payment destination,
+// and tenant activation are configured) before the public UI can open checkout.
+const PB_PUBLIC_BOOKING_REQUESTED =
   PB_RUNTIME_CONFIG.publicBookingEnabled === true && PB_PLATFORM_V1 && PB_SUPABASE_CONFIGURED;
+window.PB_PUBLIC_BOOKING_ENABLED = false;
+window.PB_PLATFORM_READINESS = null;
 window.PB_HOST_PORTAL_ENABLED =
   PB_RUNTIME_CONFIG.hostPortalEnabled === true && PB_PLATFORM_V1 && PB_SUPABASE_CONFIGURED;
 window.PB_TENANT_SLUG = PB_TENANT_SLUG;
@@ -185,6 +190,12 @@ async function _pbPlatformBootstrap() {
     if (!data?.tenant || !Array.isArray(data?.courts)) {
       throw new Error('This booking website is not configured for the current domain.');
     }
+    const readiness = data?.readiness && typeof data.readiness === 'object'
+      ? data.readiness
+      : {};
+    window.PB_PLATFORM_READINESS = Object.freeze({ ...readiness });
+    window.PB_PUBLIC_BOOKING_ENABLED =
+      PB_PUBLIC_BOOKING_REQUESTED && readiness.publicBookingEnabled === true;
     return data;
   });
 }
@@ -360,6 +371,15 @@ function _pbPlatformBookingToLegacy(row, courtMap, timeZone) {
 
 function _pbPlatformSettingsToLegacy(bootstrap) {
   const settings = { ...(bootstrap?.settings || {}) };
+  const bookingFee = bootstrap?.bookingFee || bootstrap?.billing || null;
+  if (bookingFee && typeof bookingFee === 'object') {
+    const amount = Number(bookingFee.amount ?? bookingFee.feeAmount);
+    const mode = String(bookingFee.mode ?? bookingFee.feeMode ?? '');
+    if (Number.isFinite(amount) && amount >= 0) settings.maintenance_fee = String(amount);
+    if (mode) {
+      settings.fee_type = mode === 'fixed_per_booking' ? 'flat' : 'per_hour';
+    }
+  }
   const court = Array.isArray(bootstrap?.courts) ? bootstrap.courts[0] : null;
   if (court) {
     const legacyCourt = _pbPlatformCourtToLegacy(court);
@@ -416,6 +436,51 @@ function _pbPlatformSettingsToLegacy(bootstrap) {
     settings.pnb_qr_image = pnb.qrImageUrl || '';
   }
   return settings;
+}
+
+function _pbNormalizeTenantActivationSettings(value) {
+  const raw = value && typeof value === 'object' ? value : {};
+  const venue = raw.venue && typeof raw.venue === 'object' ? raw.venue : {};
+  const tenant = raw.tenant && typeof raw.tenant === 'object' ? raw.tenant : {};
+  const billing = raw.platformBilling && typeof raw.platformBilling === 'object'
+    ? raw.platformBilling
+    : raw.billing && typeof raw.billing === 'object'
+      ? raw.billing
+      : null;
+  const readiness = raw.readiness && typeof raw.readiness === 'object'
+    ? { ...raw.readiness }
+    : { publicBookingEnabled: false, blockingReasons: ['server_readiness_unavailable'] };
+  const paymentMethods = Array.isArray(raw.paymentMethods) ? raw.paymentMethods : [];
+  return {
+    tenant: {
+      id: tenant.id || '',
+      slug: tenant.slug || PB_TENANT_SLUG,
+      name: tenant.name || '',
+      contactEmail: tenant.contactEmail || venue.contactEmail || '',
+      replyToEmail: venue.replyToEmail || tenant.replyToEmail || '',
+      emailEnabled: venue.emailEnabled === true,
+      publicBookingRequested: venue.publicBookingEnabled === true ||
+        readiness.requestedPublicBookingEnabled === true,
+    },
+    permissions: raw.permissions && typeof raw.permissions === 'object'
+      ? { ...raw.permissions }
+      : {},
+    billing: billing ? {
+      feeMode: String(billing.feeMode || ''),
+      feeAmount: Number(billing.feeAmount),
+    } : null,
+    paymentMethods: paymentMethods.map(method => ({
+      code: String(method.methodCode || method.code || '').toLowerCase(),
+      displayName: method.displayName || method.methodCode || method.code || '',
+      accountName: method.accountName || '',
+      accountReference: method.accountNumber || method.accountReference || '',
+      qrImageUrl: method.qrUrl || method.qrImageUrl || '',
+      instructions: method.instructions || '',
+      isActive: method.isActive === true,
+      sortOrder: Number(method.sortOrder || 0),
+    })).filter(method => method.code),
+    readiness,
+  };
 }
 
 function _pbLocalIntervalHours(startsAt, endsAt, targetDate) {
@@ -2038,12 +2103,161 @@ window.DB = {
     _pbClearFastCache(['settings']);
   },
 
+  // ---- TENANT ACTIVATION SETTINGS ----
+  // These are authoritative production settings. They intentionally live in
+  // tenant-scoped database tables instead of build-time JavaScript constants.
+  async getTenantActivationSettings() {
+    if (!PB_PLATFORM_V1) {
+      const settings = await this.getSettings();
+      return {
+        tenant: {
+          replyToEmail: settings.email_reply_to || '',
+          emailEnabled: settings.email_enabled === '1',
+          publicBookingRequested: settings.public_booking_requested === '1',
+        },
+        billing: {
+          feeMode: String(settings.fee_type || '').toLowerCase() === 'flat'
+            ? 'fixed_per_booking'
+            : 'fixed_per_hour',
+          feeAmount: Number(settings.maintenance_fee || 0),
+        },
+        paymentMethods: [],
+        readiness: { publicBookingEnabled: false },
+      };
+    }
+
+    const result = await _invokeEdgeFunction(
+      `tenant-activation-settings?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      { action: 'get', tenantSlug: PB_TENANT_SLUG },
+      { preferDirect: true }
+    );
+    if (!result?.ok || !result.settings) {
+      throw new Error('Activation settings returned an invalid response.');
+    }
+    return _pbNormalizeTenantActivationSettings(result.settings);
+  },
+
+  async saveTenantPlatformBilling({ feeMode, feeAmount }) {
+    const mode = String(feeMode || '');
+    const amount = Number(feeAmount);
+    if (!['fixed_per_booking', 'fixed_per_hour'].includes(mode)) {
+      throw new Error('Choose a valid booking-fee charging method.');
+    }
+    if (!Number.isFinite(amount) || amount < 0 || amount > 1000000) {
+      throw new Error('Enter a valid non-negative booking fee.');
+    }
+    if (!PB_PLATFORM_V1) {
+      await this.saveSetting('maintenance_fee', String(amount));
+      await this.saveSetting('fee_type', mode === 'fixed_per_booking' ? 'flat' : 'per_hour');
+      return;
+    }
+    await window.Auth.requireAal2();
+    const result = await _invokeEdgeFunction(
+      `tenant-activation-settings?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      {
+        action: 'update',
+        tenantSlug: PB_TENANT_SLUG,
+        patch: { platformBilling: { feeMode: mode, feeAmount: amount } },
+      },
+      { preferDirect: true }
+    );
+    if (!result?.ok || !result.settings) throw new Error('The booking fee was not saved.');
+    _pbClearFastCache(['settings', 'platformBootstrap']);
+    await _pbPlatformBootstrap();
+    return _pbNormalizeTenantActivationSettings(result.settings);
+  },
+
+  async saveTenantActivationSettings({
+    publicBookingRequested,
+    emailEnabled,
+    replyToEmail,
+    paymentMethods,
+  }) {
+    const email = String(replyToEmail || '').trim().toLowerCase();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new Error('Enter a valid Reply-To email address.');
+    }
+    const methods = Array.isArray(paymentMethods) ? paymentMethods : [];
+    const normalized = methods.map((method, index) => {
+      const code = String(method.code || '').trim().toLowerCase();
+      const displayName = String(method.displayName || '').trim();
+      const accountName = String(method.accountName || '').trim();
+      const accountReference = String(method.accountReference || '').trim();
+      const instructions = String(method.instructions || '').trim();
+      const qrImageUrl = String(method.qrImageUrl || '').trim();
+      if (!/^[a-z][a-z0-9_-]{1,39}$/.test(code)) throw new Error('A payment-method code is invalid.');
+      if (displayName.length < 2 || displayName.length > 80) throw new Error(`Enter a valid name for ${code}.`);
+      if (accountName && (accountName.length < 2 || accountName.length > 120)) throw new Error(`${displayName} account name is invalid.`);
+      if (accountReference && (accountReference.length < 3 || accountReference.length > 120)) throw new Error(`${displayName} account number is invalid.`);
+      if (instructions.length > 1000) throw new Error(`${displayName} instructions are too long.`);
+      if (qrImageUrl) {
+        let parsed;
+        try { parsed = new URL(qrImageUrl); } catch (_) { parsed = null; }
+        if (!parsed || parsed.protocol !== 'https:' || parsed.username || parsed.password || !parsed.hostname || qrImageUrl.length > 500) {
+          throw new Error(`${displayName} QR must be a public HTTPS URL.`);
+        }
+      }
+      const configured = !!(accountName || accountReference || instructions || qrImageUrl);
+      if (configured && (!accountName || !accountReference)) {
+        throw new Error(`${displayName} needs both the receiving account name and account number.`);
+      }
+      if (method.isActive && !configured) {
+        throw new Error(`${displayName} needs receiving account details before it can be enabled.`);
+      }
+      return {
+        methodCode: code,
+        displayName,
+        accountName,
+        accountNumber: accountReference,
+        qrUrl: qrImageUrl || null,
+        instructions: instructions || null,
+        isActive: method.isActive === true,
+        sortOrder: Number.isInteger(method.sortOrder) ? method.sortOrder : index,
+        configured,
+      };
+    }).filter(method => method.configured).map(({ configured, ...method }) => method);
+
+    if (!PB_PLATFORM_V1) {
+      await this.saveSetting('email_reply_to', email);
+      await this.saveSetting('email_enabled', emailEnabled ? '1' : '0');
+      await this.saveSetting('public_booking_requested', publicBookingRequested ? '1' : '0');
+      return;
+    }
+    await window.Auth.requireAal2();
+    const result = await _invokeEdgeFunction(
+      `tenant-activation-settings?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      {
+        action: 'update',
+        tenantSlug: PB_TENANT_SLUG,
+        patch: {
+          venue: {
+            replyToEmail: email || null,
+            emailEnabled: emailEnabled === true,
+            publicBookingEnabled: publicBookingRequested === true,
+          },
+          paymentMethods: normalized,
+        },
+      },
+      { preferDirect: true }
+    );
+    if (!result?.ok || !result.settings) throw new Error('Activation settings were not saved.');
+    _pbClearFastCache(['settings', 'platformBootstrap']);
+    // Refresh the safe server view so the public gate changes only when the
+    // backend has independently confirmed every required setting.
+    await _pbPlatformBootstrap();
+    return _pbNormalizeTenantActivationSettings(result.settings);
+  },
+
   clearCache(scopes = []) {
     _pbClearFastCache(scopes);
   },
 
   async createPublicBooking(booking, { turnstileToken } = {}) {
     if (!PB_PLATFORM_V1) throw new Error('The tenant booking service is not enabled.');
+    const bootstrap = await _pbPlatformBootstrap();
+    if (bootstrap?.readiness?.publicBookingEnabled !== true) {
+      throw new Error('Online booking is not ready yet. Complete the required settings in the dashboard.');
+    }
     const slots = [...new Set((booking?.slots || []).map(Number))]
       .filter(Number.isInteger)
       .sort((a, b) => a - b);
@@ -2221,7 +2435,51 @@ window.DB = {
 
   async getIntegrationStatus() {
     if (PB_PLATFORM_V1) {
-      return { ok: true, platform: true, legacyIntegrationsDisabled: true };
+      const activation = await this.getTenantActivationSettings();
+      const activeMethods = (activation.paymentMethods || []).filter(method => method.isActive);
+      const hasPaymentDestination = activeMethods.some(method =>
+        method.accountReference || method.qrImageUrl || method.instructions
+      );
+      const serverReady = activation.readiness?.publicBookingEnabled === true;
+      return {
+        ok: true,
+        platform: true,
+        legacyIntegrationsDisabled: true,
+        services: [
+          {
+            id: 'booking-gate',
+            label: 'Public booking gate',
+            configured: serverReady,
+            missing: serverReady ? [] : ['server readiness approval'],
+            note: serverReady
+              ? 'The server confirms this tenant can accept bookings.'
+              : 'Public checkout stays closed until all required settings pass the server check.',
+          },
+          {
+            id: 'billing',
+            label: 'Platform booking fee',
+            configured: !!activation.billing,
+            missing: activation.billing ? [] : ['fee mode and amount'],
+          },
+          {
+            id: 'payments',
+            label: 'Customer payment destination',
+            configured: hasPaymentDestination,
+            missing: hasPaymentDestination ? [] : ['an enabled payment method with destination details'],
+          },
+          {
+            id: 'email',
+            label: 'Tenant booking email',
+            configured: !activation.tenant.emailEnabled || !!activation.tenant.replyToEmail,
+            missing: activation.tenant.emailEnabled && !activation.tenant.replyToEmail
+              ? ['court Reply-To email']
+              : [],
+            note: activation.tenant.emailEnabled
+              ? 'Booking email is enabled for this tenant.'
+              : 'Booking email is currently disabled by the tenant setting.',
+          },
+        ],
+      };
     }
     return _invokeEdgeFunction('integration-status', { action: 'status' }, { allowFailure: true });
   },
@@ -3481,6 +3739,35 @@ window.DB = {
     async saveSetting(key, value) {
       const db = readDb();
       db.settings[key] = value;
+      writeDb(db);
+    },
+    async getTenantActivationSettings() {
+      const settings = readDb().settings || {};
+      return {
+        tenant: {
+          replyToEmail: settings.email_reply_to || '',
+          emailEnabled: settings.email_enabled === '1',
+          publicBookingRequested: settings.public_booking_requested === '1',
+        },
+        billing: {
+          feeMode: settings.fee_type === 'flat' ? 'fixed_per_booking' : 'fixed_per_hour',
+          feeAmount: Number(settings.maintenance_fee || 0),
+        },
+        paymentMethods: [],
+        readiness: { publicBookingEnabled: false, localDataMode: true },
+      };
+    },
+    async saveTenantPlatformBilling({ feeMode, feeAmount }) {
+      const db = readDb();
+      db.settings.maintenance_fee = String(Number(feeAmount) || 0);
+      db.settings.fee_type = feeMode === 'fixed_per_booking' ? 'flat' : 'per_hour';
+      writeDb(db);
+    },
+    async saveTenantActivationSettings({ publicBookingRequested, emailEnabled, replyToEmail }) {
+      const db = readDb();
+      db.settings.public_booking_requested = publicBookingRequested ? '1' : '0';
+      db.settings.email_enabled = emailEnabled ? '1' : '0';
+      db.settings.email_reply_to = String(replyToEmail || '').trim();
       writeDb(db);
     },
     clearCache() {},
