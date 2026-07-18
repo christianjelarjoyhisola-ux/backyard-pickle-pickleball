@@ -18,12 +18,11 @@
     supabasePublishableKey: 'sb_publishable_UHMKYGsygjeMl79VRfPNVw_RyWiV5Yr',
     schemaVersion: 'multi-tenant-v1',
     turnstileSiteKey: '0x4AAAAAAD4f_jPZuqET5eVD',
-    // Authentication is activated independently from public booking writes.
-    // This lets approved staff use real Supabase Auth while the remaining
-    // booking/payment rollout stays explicitly disabled.
+    // The platform connection stays enabled; the tenant's protected dashboard
+    // settings are the authoritative switch for public booking readiness.
     authEnabled: true,
-    backendEnabled: false,
-    publicBookingEnabled: false,
+    backendEnabled: true,
+    publicBookingEnabled: true,
     hostPortalEnabled: false,
   });
 
