@@ -8049,6 +8049,7 @@ async function submitPlatformBooking() {
       paymentReference,
       receiptFile: _receiptFile,
     });
+    const automaticallyApproved = result.status === 'auto_approved';
     const item = activeBookingItems()[0] || {};
     const server = access.booking || {};
     const booking = {
@@ -8063,13 +8064,15 @@ async function submitPlatformBooking() {
       downpayment: Number(server.totalAmount || item.total || 0),
       paymentMethod: payMethod,
       gcashRef: paymentReference,
-      paymentStatus: 'for_verification',
-      status: 'pending',
+      paymentStatus: automaticallyApproved ? 'paid' : 'for_verification',
+      status: automaticallyApproved ? 'confirmed' : 'pending',
       createdAt: new Date().toISOString(),
       _receiptResult: {
         status: result.status || 'manual_review',
         flags: result.flags || [],
-        message: result.publicReason || 'Your full-payment receipt is awaiting staff review.',
+        message: result.publicReason || (automaticallyApproved
+          ? 'Payment verified automatically. Your booking is confirmed.'
+          : 'Your full-payment receipt is awaiting staff review.'),
       },
     };
     try {
@@ -8083,7 +8086,9 @@ async function submitPlatformBooking() {
     showInvoice(booking);
     await startSavedPlatformBookingPolling();
     resetForm({ platformSuccess: true });
-    toast(result.publicReason || `Booking ${access.reference} is awaiting payment review.`, 'ok');
+    toast(result.publicReason || (automaticallyApproved
+      ? `Booking ${access.reference} is confirmed.`
+      : `Booking ${access.reference} is awaiting payment review.`), 'ok');
     if (DB.clearCache) DB.clearCache(['bookings', 'platformAvailability']);
     await renderCourts();
   } catch (error) {
