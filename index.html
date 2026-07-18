@@ -5137,14 +5137,32 @@ function jsArg(v) {
   return esc(String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r/g, '\\r').replace(/\n/g, '\\n'));
 }
 
-function toast(msg, type='ok') {
+function toast(msg, type='ok', key='') {
   const icons = {ok:'✅', err:'❌', inf:'ℹ️'};
+  const container = $('toasts');
+  const toastKey = String(key || '');
+  if (toastKey) {
+    const matches = [...container.querySelectorAll('.toast')]
+      .filter(item => item.dataset.toastKey === toastKey);
+    const existing = matches.shift();
+    matches.forEach(item => item.remove());
+    if (existing) {
+      clearTimeout(existing._dismissTimer);
+      existing.style.animation = 'none';
+      void existing.offsetWidth;
+      existing.style.animation = '';
+      existing._dismissTimer = setTimeout(() => existing.remove(), 3800);
+      return;
+    }
+  }
   const el = document.createElement('div');
   el.className = `toast ${type}`;
+  if (toastKey) el.dataset.toastKey = toastKey;
   el.innerHTML = `<span>${icons[type]||''}</span><span class="t-msg"></span>`;
   el.querySelector('.t-msg').textContent = String(msg ?? '');
-  $('toasts').appendChild(el);
-  setTimeout(() => el.remove(), 3800);
+  container.appendChild(el);
+  if (toastKey) el._dismissTimer = setTimeout(() => el.remove(), 3800);
+  else setTimeout(() => el.remove(), 3800);
 }
 
 function copyToClipboard(text) {
@@ -6307,7 +6325,7 @@ async function proceedToBookLegacy(courtId) {
 
 async function proceedToBook(courtId = null) {
   if (!window.PB_PUBLIC_BOOKING_ENABLED) {
-    toast('Online booking is not live yet. Please call 0915 393 4597 for assistance.', 'inf');
+    toast('Online booking is not live yet. Please call 0915 393 4597 for assistance.', 'inf', 'booking-offline');
     return;
   }
   if (window.PB_PLATFORM_V1 && await restorePlatformBookingHold({ openModal: true, silent: true })) return;
@@ -8016,7 +8034,7 @@ async function submitPlatformBooking() {
 async function submitBooking(e) {
   if (e) e.preventDefault();
   if (!window.PB_PUBLIC_BOOKING_ENABLED) {
-    toast('Online booking is not live yet. Please call 0915 393 4597 for assistance.', 'inf');
+    toast('Online booking is not live yet. Please call 0915 393 4597 for assistance.', 'inf', 'booking-offline');
     return;
   }
   if (window.PB_PLATFORM_V1) return submitPlatformBooking();
