@@ -3286,8 +3286,8 @@ body.host-mode .courts { padding-bottom:140px; }
             <div id="wiz3Summary" style="font-size:.84rem;line-height:1.55"></div>
           </div>
           <div id="bookingSecurityCheck" style="display:none;margin-top:12px;color:var(--muted);font-size:.72rem;line-height:1.4">
-            <div id="bookingTurnstile"></div>
-            <span>Protected by Cloudflare Turnstile. Verification runs when you continue.</span>
+            <div id="bookingTurnstile" style="width:100%;max-width:420px"></div>
+            <span id="bookingTurnstileStatus">Protected by Cloudflare Turnstile. A security check appears only when confirmation is needed.</span>
           </div>
         </div>
 
@@ -3831,6 +3831,7 @@ function clearPlatformRequestState({ clearAccess = true } = {}) {
 
 function bookingTurnstileCallback(token) {
   _bookingTurnstileToken = String(token || '');
+  if ($('bookingTurnstileStatus')) $('bookingTurnstileStatus').textContent = 'Security check complete.';
   const resolve = _bookingTurnstileResolve;
   if (resolve) resolve(_bookingTurnstileToken);
 }
@@ -3841,10 +3842,33 @@ function bookingTurnstileExpired() {
   if (reject) reject(new Error('Security verification expired. Please try again.'));
 }
 
-function bookingTurnstileError() {
+function bookingTurnstileError(errorCode) {
+  _bookingTurnstileToken = '';
+  const code = String(errorCode || '');
+  const isConfigurationError = /^(110100|110110|110200|400020|400070)$/.test(code);
+  if ($('bookingTurnstileStatus')) {
+    $('bookingTurnstileStatus').textContent = isConfigurationError
+      ? 'Security verification is temporarily unavailable.'
+      : 'Security verification is retrying. Please wait a moment.';
+  }
+  const reject = _bookingTurnstileReject;
+  if (isConfigurationError && reject) {
+    reject(new Error('Security verification is temporarily unavailable. Please try again shortly.'));
+  }
+  return isConfigurationError;
+}
+
+function bookingTurnstileTimeout() {
+  _bookingTurnstileToken = '';
+  if ($('bookingTurnstileStatus')) $('bookingTurnstileStatus').textContent = 'Security check timed out. Please try again.';
+  const reject = _bookingTurnstileReject;
+  if (reject) reject(new Error('Security verification timed out. Please try again.'));
+}
+
+function bookingTurnstileUnsupported() {
   _bookingTurnstileToken = '';
   const reject = _bookingTurnstileReject;
-  if (reject) reject(new Error('Security verification could not start. Please try again.'));
+  if (reject) reject(new Error('This browser cannot run the security check. Please update your browser or try another device.'));
 }
 
 async function waitForTurnstile(timeoutMs = 10000) {
@@ -3861,15 +3885,23 @@ async function getBookingTurnstileToken() {
   const sitekey = String(window.PB_TENANT_CONFIG?.turnstileSiteKey || '').trim();
   if (!sitekey) throw new Error('Online booking security is not configured yet.');
   const turnstile = await waitForTurnstile();
+  if ($('bookingTurnstileStatus')) $('bookingTurnstileStatus').textContent = 'Checking your browser securely...';
   if (_bookingTurnstileWidgetId === null) {
     _bookingTurnstileWidgetId = turnstile.render('#bookingTurnstile', {
       sitekey,
       action: 'booking_create',
-      size: 'invisible',
+      size: 'flexible',
+      appearance: 'interaction-only',
       execution: 'execute',
+      retry: 'auto',
+      'retry-interval': 1500,
+      'refresh-expired': 'auto',
+      'refresh-timeout': 'auto',
       callback: bookingTurnstileCallback,
       'expired-callback': bookingTurnstileExpired,
       'error-callback': bookingTurnstileError,
+      'timeout-callback': bookingTurnstileTimeout,
+      'unsupported-callback': bookingTurnstileUnsupported,
     });
   }
   if (_bookingTurnstileToken) return _bookingTurnstileToken;
@@ -3889,7 +3921,7 @@ async function getBookingTurnstileToken() {
     const finishReject = error => finish(reject, error);
     const timer = setTimeout(
       () => finishReject(new Error('Security verification timed out. Please try again.')),
-      15000
+      30000
     );
     _bookingTurnstileResolve = finishResolve;
     _bookingTurnstileReject = finishReject;
