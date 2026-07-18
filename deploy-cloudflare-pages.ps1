@@ -19,7 +19,11 @@ if (-not $env:CLOUDFLARE_API_TOKEN -and $envMap["CLOUDFLARE_API_TOKEN"]) {
   $env:CLOUDFLARE_API_TOKEN = $envMap["CLOUDFLARE_API_TOKEN"]
 }
 
-$projectName = if ($envMap["CLOUDFLARE_PAGES_PROJECT"]) { $envMap["CLOUDFLARE_PAGES_PROJECT"] } else { "backyard-pickle-pickleball" }
+$expectedProjectName = "backyard-pickle-pickleball"
+$projectName = if ($envMap["CLOUDFLARE_PAGES_PROJECT"]) { $envMap["CLOUDFLARE_PAGES_PROJECT"] } else { $expectedProjectName }
+if ($projectName -cne $expectedProjectName) {
+  throw "Cloudflare deployment blocked: this repository may deploy only to '$expectedProjectName'."
+}
 $branchName = if ($envMap["CLOUDFLARE_PAGES_BRANCH"]) { $envMap["CLOUDFLARE_PAGES_BRANCH"] } else { "main" }
 
 $publicFiles = @(
