@@ -3,14 +3,23 @@
 // Replace these with your actual project credentials.
 // Find them at: Supabase Dashboard → Project Settings → API
 // =============================================
-// Use a new Supabase project dedicated to Backyard Pickle. Never point this
-// tenant at another court owner's database.
-const SUPABASE_URL = 'https://YOUR_PROJECT_REF.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+// Backyard uses a tenant-scoped connection to the independent shared platform.
+// The explicit backendEnabled flag prevents an unfinished platform from being
+// activated merely by filling in a URL or key.
+const PB_TENANT_CONFIG = window.PB_TENANT_CONFIG || {};
+const PB_TENANT_SLUG = String(PB_TENANT_CONFIG.tenantSlug || 'backyard-pickle');
+const SUPABASE_URL = PB_TENANT_CONFIG.backendEnabled
+  ? String(PB_TENANT_CONFIG.supabaseUrl || '')
+  : 'https://YOUR_PLATFORM_PROJECT_REF.supabase.co';
+const SUPABASE_ANON_KEY = PB_TENANT_CONFIG.backendEnabled
+  ? String(PB_TENANT_CONFIG.supabasePublishableKey || '')
+  : 'YOUR_PLATFORM_PUBLISHABLE_KEY';
 const PB_SUPABASE_CONFIGURED =
-  !SUPABASE_URL.includes('YOUR_PROJECT_REF') &&
-  !SUPABASE_ANON_KEY.includes('YOUR_SUPABASE_ANON_KEY');
+  PB_TENANT_CONFIG.backendEnabled === true &&
+  !SUPABASE_URL.includes('YOUR_PLATFORM_PROJECT_REF') &&
+  !SUPABASE_ANON_KEY.includes('YOUR_PLATFORM_PUBLISHABLE_KEY');
 window.PB_SUPABASE_CONFIGURED = PB_SUPABASE_CONFIGURED;
+window.PB_TENANT_SLUG = PB_TENANT_SLUG;
 
 const PB_REQUEST_TIMEOUT_MS = 45000;
 const PB_RECEIPT_TIMEOUT_MS = 90000;

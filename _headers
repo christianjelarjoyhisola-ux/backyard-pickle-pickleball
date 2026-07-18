@@ -19,3 +19,6 @@
 
 /supabase-config.js
   Cache-Control: no-cache
+
+/tenant-config.js
+  Cache-Control: no-cache

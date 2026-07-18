@@ -40,6 +40,7 @@ $publicFiles = @(
   "signature-view.html",
   "signature-view.png",
   "style.css",
+  "tenant-config.js",
   "supabase-config.js",
   "supabase.min.js"
 )
