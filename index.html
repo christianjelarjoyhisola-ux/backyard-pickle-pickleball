@@ -3788,7 +3788,7 @@ function syncBookingModeUi() {
   $('eventDetailsFields')?.classList.toggle('show', eventMode);
   if ($('courtsHeading')) $('courtsHeading').textContent = eventMode ? '🎉 BOOK AN EVENT' : '🏟️ BOOK THE MAIN COURT';
   if ($('courtsLead')) $('courtsLead').textContent = eventMode
-    ? 'Choose at least four consecutive hours for your private event.'
+    ? 'Tap your event start time. The next three hours are selected automatically.'
     : 'Choose your date and any available court hours, then continue.';
   if ($('findTimeCopy')) $('findTimeCopy').textContent = eventMode
     ? 'Find four or more consecutive event hours.'
@@ -5472,6 +5472,45 @@ function findTimeSlotsAvailable({ court, date, slots, bookedSet, blockedDates })
   );
 }
 
+function eventMinimumBlock(start) {
+  return Array.from({ length: EVENT_MIN_HOURS }, (_, i) => Number(start) + i);
+}
+
+function eventBlockIssue({ date, courtId, start, availableHours }) {
+  const curHour = isToday(date) ? nowHour() : -1;
+  return eventMinimumBlock(start).find(h =>
+    h < openHour ||
+    h >= closeHour ||
+    date < todayStr() ||
+    (isToday(date) && h <= curHour) ||
+    !availableHours.has(h) ||
+    isOpenPlayHour(date, h, courtId) ||
+    isMaintenanceHour(date, h, courtId)
+  );
+}
+
+function nearestEventBlockStart({ date, courtId, preferredStart, availableHours }) {
+  const starts = [];
+  for (let start = openHour; start + EVENT_MIN_HOURS <= closeHour; start++) {
+    if (eventBlockIssue({ date, courtId, start, availableHours }) === undefined) starts.push(start);
+  }
+  return starts.sort((a, b) => Math.abs(a - preferredStart) - Math.abs(b - preferredStart) || a - b)[0];
+}
+
+function eventBlockUnavailableToast({ date, courtId, start, availableHours }) {
+  const unavailableHour = eventBlockIssue({ date, courtId, start, availableHours });
+  const nearestStart = nearestEventBlockStart({ date, courtId, preferredStart: start, availableHours });
+  const conflict = unavailableHour === undefined
+    ? ''
+    : unavailableHour >= closeHour
+      ? ` because it would continue past the ${fmtT(closeHour)} closing time`
+      : ` because ${fmtT(unavailableHour)} - ${fmtT(unavailableHour + 1)} is unavailable`;
+  const suggestion = nearestStart === undefined
+    ? ' No four-hour event block remains on this date. Please choose another date.'
+    : ` No hours were selected. Try ${fmtT(nearestStart)} - ${fmtT(nearestStart + EVENT_MIN_HOURS)} instead.`;
+  toast(`A ${EVENT_MIN_HOURS}-hour event cannot start at ${fmtT(start)}${conflict}.${suggestion}`, 'err');
+}
+
 async function findAvailableTimeMatches(date, preferredStart, duration) {
   await loadOperatingHours();
   const [courts, bookings, blockedDates] = await Promise.all([
@@ -5614,6 +5653,25 @@ async function toggleCardSlot(courtId, date, h) {
 
   const s = sel.slots;
   const i = s.indexOf(h);
+  if (isEventBooking() && s.length === 0) {
+    const grid = $('cSlots_' + courtId);
+    const availableHours = new Set(
+      [...(grid?.querySelectorAll('.cc-slot-btn[data-h]') || [])].map(el => Number(el.dataset.h))
+    );
+    const block = eventMinimumBlock(h);
+    if (eventBlockIssue({ date, courtId, start: h, availableHours }) !== undefined) {
+      eventBlockUnavailableToast({ date, courtId, start: h, availableHours });
+      delete cardSelections[key];
+      refreshCardSelAlias();
+      updateCardUI(courtId);
+      return;
+    }
+    s.push(...block);
+    refreshCardSelAlias();
+    updateCardUI(courtId);
+    toast(`${EVENT_MIN_HOURS}-hour event selected: ${fmtT(h)} - ${fmtT(h + EVENT_MIN_HOURS)}. Add an adjacent hour if you need more time.`, 'ok');
+    return;
+  }
   if (isEventBooking() && s.length > 0) {
     const first = Math.min(...s);
     const last = Math.max(...s);
@@ -6625,7 +6683,7 @@ async function renderCourts() {
         <div class="cc-times-head">
           <div>
             <div class="cc-times-title">🕐 Available times</div>
-            <div class="cc-times-sub">Select any available court hours below</div>
+            <div class="cc-times-sub">${isEventBooking() ? 'Tap a start time - the next 3 hours auto-select' : 'Select any available court hours below'}</div>
           </div>
           <input type="hidden" id="cDate_${esc(c.id)}" value="${esc(selectedDate)}" />
         </div>
@@ -6899,7 +6957,18 @@ function toggleSlot(h) {
   }
 
   const i = selSlots.indexOf(h);
-  if (i === -1) {
+  if (isEventBooking() && selSlots.length === 0) {
+    const availableHours = new Set(
+      [...document.querySelectorAll('#slotsGrid .slot.free[data-h]')].map(el => Number(el.dataset.h))
+    );
+    const block = eventMinimumBlock(h);
+    if (eventBlockIssue({ date, courtId: court.id, start: h, availableHours }) !== undefined) {
+      eventBlockUnavailableToast({ date, courtId: court.id, start: h, availableHours });
+      return;
+    }
+    selSlots.push(...block);
+    toast(`${EVENT_MIN_HOURS}-hour event selected: ${fmtT(h)} - ${fmtT(h + EVENT_MIN_HOURS)}.`, 'ok');
+  } else if (i === -1) {
     selSlots.push(h);
     selSlots.sort((a,b) => a - b);
   } else {
