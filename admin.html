@@ -4167,6 +4167,13 @@ const RECEIPT_FLAG_LABELS = {
   AMOUNT_REVIEW:'Amount needs owner review',
   DATE_UNREADABLE:'Date unreadable', TIME_UNREADABLE:'Time unreadable', NUMBER_UNREADABLE:'Receiver number unreadable',
   BDO_PAY_UNREADABLE:'BDO Pay/InstaPay unreadable', MAYA_UNREADABLE:'Maya unreadable', BPI_UNREADABLE:'BPI success unreadable', BPI_CONFIRMATION_UNREADABLE:'BPI confirmation unreadable', BPI_TRANSACTION_UNREADABLE:'BPI transaction ref unreadable', INSTAPAY_QRPH_UNREADABLE:'InstaPay/QRPh unreadable', GXI_DESTINATION_UNREADABLE:'GXI/GCash destination unreadable', RECEIVER_NAME_UNREADABLE:'Receiver name unreadable',
+  manual_review_required:'Manual review required', amount_not_detected:'Amount not detected',
+  amount_mismatch:'Amount does not match', payment_reference_not_detected:'Reference not detected',
+  payment_reference_mismatch:'Reference does not match', payment_method_unverified:'GCash receipt not verified',
+  automatic_method_unsupported:'Automatic check not supported for this method',
+  payment_receiver_unverified:'Receiver could not be verified', low_ocr_confidence:'Blurry / low OCR',
+  ocr_text_not_detected:'Receipt text not detected', auto_approval_eligible:'All automatic checks passed',
+  ocr_confidence_unavailable:'Vision confidence not provided',
 };
 function receiptReasonText(flags){
   if (!flags || !flags.length) return 'No specific reason saved';
@@ -4180,7 +4187,7 @@ function receiptFlagsForDisplay(b){
   let flags = [...new Set(b?.receiptFlags || [])];
   const method = String(b?.paymentMethod || b?.payment_method || '').toLowerCase();
   const ex = b?.receiptExtracted || b?.receipt_extracted || {};
-  const ref = String(b?.gcashRef || b?.gcash_ref || ex.ref || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const ref = String(b?.gcashRef || b?.gcash_ref || ex.ref || ex.detected?.paymentReference || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
   if (method === 'bdopay' || method === 'maya') {
     flags = removeReceiptFlags(flags, ['WRONG_GCASH_NUMBER', 'NUMBER_UNREADABLE', 'RECEIVER_NAME_MISMATCH']);
@@ -4257,19 +4264,30 @@ function receiptTimeValue(extracted){
   }
   return '--';
 }
-function receiptReceiverValue(extracted){
+function receiptReceiverValue(extracted, booking){
   if (!extracted) return '--';
   const parts = [extracted.expectedReceiverName, extracted.expectedReceiverNumber].filter(Boolean);
-  return parts.length ? esc(parts.join(' / ')) : '--';
+  if (parts.length) return esc(parts.join(' / '));
+  if (extracted.provider === 'google_vision' && !(booking?.receiptFlags || []).includes('payment_receiver_unverified')) {
+    return 'Matched configured account';
+  }
+  return '--';
 }
 function receiptDetailsHtml(b){
   const ex = b.receiptExtracted || {};
+  const detected = ex.detected && typeof ex.detected === 'object' ? ex.detected : {};
+  const comparison = ex.comparison && typeof ex.comparison === 'object' ? ex.comparison : {};
   const displayFlags = receiptFlagsForDisplay(b);
   const reason = displayFlags.length ? receiptReasonText(displayFlags) : 'All visible checks passed';
-  const ocrConfidenceNumber = Number(ex.ocrConfidence);
-  const ocrConfidence = ex.ocrConfidence != null && Number.isFinite(ocrConfidenceNumber)
+  const rawConfidence = b.receiptConfidence ?? ex.ocrConfidence;
+  const ocrConfidenceNumber = Number(rawConfidence);
+  const ocrConfidence = rawConfidence != null && Number.isFinite(ocrConfidenceNumber)
     ? `${Math.round(ocrConfidenceNumber * 100)}%`
-    : '--';
+    : ex.provider === 'google_vision' ? 'Not provided by Vision' : '--';
+  const detectedAmounts = Array.isArray(detected.amounts) ? detected.amounts : [];
+  const expectedAmount = Number(comparison.expectedAmount);
+  const matchingAmount = detectedAmounts.find(value => Number.isFinite(Number(value)) && Number.isFinite(expectedAmount) && Math.abs(Number(value) - expectedAmount) <= .01);
+  const amountRead = matchingAmount ?? detectedAmounts[0] ?? ex.amount;
   const amountParse = ex.amountReason === 'legacy_parser'
     ? 'Legacy parser result'
     : ex.amountReliable === true
@@ -4280,14 +4298,14 @@ function receiptDetailsHtml(b){
           ? 'Uncertain — manual review'
           : '--';
   const rows = [
-    ['OCR Ref', receiptDetailValue(ex.ref || b.gcashRef)],
-    ['Amount Read', receiptAmountValue(ex.amount)],
+    ['OCR Ref', receiptDetailValue(ex.ref || detected.paymentReference || b.gcashRef)],
+    ['Amount Read', receiptAmountValue(amountRead)],
     ['Receipt Time', receiptTimeValue(ex)],
     ['Receipt Date', receiptDetailValue(ex.date)],
     ['Booking Started', receiptDetailValue(ex.bookingStartedAtPh12)],
     ['Window', ex.allowedPaymentWindowMinutes ? `${esc(ex.allowedPaymentWindowMinutes)} min` : '--'],
-    ['OCR Engine', receiptOcrProviderLabel(ex.ocrProvider)],
-    ['Receiver', receiptReceiverValue(ex), true],
+    ['OCR Engine', receiptOcrProviderLabel(ex.ocrProvider || ex.provider)],
+    ['Receiver', receiptReceiverValue(ex, b), true],
     ...(ex.ocrFallbackReason ? [['OCR Fallback', receiptDetailValue(ex.ocrFallbackReason), true]] : []),
     ...(ex.amountReliable !== undefined ? [['Amount Parse', receiptDetailValue(amountParse), true]] : []),
     ['Reason', receiptDetailValue(reason), true],
