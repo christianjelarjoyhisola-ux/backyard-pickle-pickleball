@@ -1941,20 +1941,48 @@ window.DB = {
   },
 
   // ---- BLOCKED DATES ----
-  async getBlockedDates() {
+  async getBlockedDateRecords() {
     if (PB_PLATFORM_V1) {
-      return _pbCached('blockedDates', {}, PB_FAST_CACHE_MS.blockedDates, async () => {
+      return _pbCached('blockedDateRecords', {}, PB_FAST_CACHE_MS.blockedDates, async () => {
         const session = await _pbAuthenticatedSession();
         const tenantId = window.Auth?.getSession?.()?.tenantId;
         if (!session || !tenantId) return [];
         const { data, error } = await _sb.from('blocked_dates')
-          .select('blocked_on,starts_at,ends_at')
+          .select('id,court_id,blocked_on,starts_at,ends_at,public_label,internal_reason,created_at')
           .eq('tenant_id', tenantId)
-          .order('blocked_on');
+          .order('blocked_on')
+          .order('starts_at', { nullsFirst: true });
         if (error) throw error;
-        return [...new Set((data || [])
-          .filter(row => !row.starts_at && !row.ends_at)
-          .map(row => row.blocked_on))];
+        return (data || []).map(row => ({
+          id: row.id,
+          courtId: row.court_id,
+          blockedOn: row.blocked_on,
+          startsAt: row.starts_at,
+          endsAt: row.ends_at,
+          publicLabel: row.public_label || 'Closed',
+          internalReason: row.internal_reason || '',
+          createdAt: row.created_at,
+        }));
+      });
+    }
+    const dates = await this.getBlockedDates();
+    return dates.map(date => ({
+      id: date,
+      blockedOn: date,
+      startsAt: null,
+      endsAt: null,
+      publicLabel: 'Closed',
+      internalReason: '',
+    }));
+  },
+
+  async getBlockedDates() {
+    if (PB_PLATFORM_V1) {
+      return _pbCached('blockedDates', {}, PB_FAST_CACHE_MS.blockedDates, async () => {
+        const records = await this.getBlockedDateRecords();
+        return [...new Set(records
+          .filter(row => !row.startsAt && !row.endsAt)
+          .map(row => row.blockedOn))];
       });
     }
     return _pbCached('blockedDates', {}, PB_FAST_CACHE_MS.blockedDates, async () => {
@@ -1964,35 +1992,57 @@ window.DB = {
     });
   },
 
-  async addBlockedDate(date) {
+  async addBlockedDate(input) {
     if (PB_PLATFORM_V1) {
-      const tenantId = window.Auth?.getSession?.()?.tenantId;
-      if (!tenantId) throw new Error('Your tenant session is no longer available. Please sign in again.');
-      const { error } = await _sb.from('blocked_dates').insert({
-        tenant_id: tenantId,
-        blocked_on: date,
-        public_label: 'Court unavailable',
+      const session = await _pbAuthenticatedSession();
+      if (!session) throw new Error('Your staff session has expired. Please sign in again.');
+      const value = typeof input === 'string' ? { startDate: input } : (input || {});
+      const { data, error } = await _sb.rpc('manage_blocked_dates', {
+        p_tenant_slug: PB_TENANT_SLUG,
+        p_action: 'create',
+        p_block_id: null,
+        p_start_date: value.startDate || value.date || null,
+        p_end_date: value.endDate || value.startDate || value.date || null,
+        p_court_id: value.courtId || null,
+        p_starts_at: value.startsAt || null,
+        p_ends_at: value.endsAt || null,
+        p_public_label: value.publicLabel || 'Reserved',
+        p_internal_reason: value.internalReason || null,
       });
-      if (error) throw error;
-      _pbClearFastCache(['blockedDates', 'bookings', 'platformAvailability']);
-      return;
+      if (error) throw new Error(error.message || 'The dates could not be reserved.');
+      _pbClearFastCache(['blockedDates', 'blockedDateRecords', 'bookings', 'platformAvailability']);
+      return data;
     }
+    const date = typeof input === 'string' ? input : (input?.startDate || input?.date);
     const { error } = await _sb.from('blocked_dates').insert({ date, created_at: new Date().toISOString() });
     if (error) console.error('addBlockedDate:', error);
     _pbClearFastCache(['blockedDates']);
   },
 
-  async removeBlockedDate(date) {
+  async removeBlockedDate(identifier) {
     if (PB_PLATFORM_V1) {
+      const session = await _pbAuthenticatedSession();
+      if (!session) throw new Error('Your staff session has expired. Please sign in again.');
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(identifier || ''))) {
+        const { data, error } = await _sb.rpc('manage_blocked_dates', {
+          p_tenant_slug: PB_TENANT_SLUG,
+          p_action: 'delete',
+          p_block_id: identifier,
+        });
+        if (error) throw new Error(error.message || 'The reserved date could not be removed.');
+        _pbClearFastCache(['blockedDates', 'blockedDateRecords', 'bookings', 'platformAvailability']);
+        return data;
+      }
       const tenantId = window.Auth?.getSession?.()?.tenantId;
       if (!tenantId) throw new Error('Your tenant session is no longer available. Please sign in again.');
       const { error } = await _sb.from('blocked_dates').delete()
-        .eq('tenant_id', tenantId).eq('blocked_on', date)
+        .eq('tenant_id', tenantId).eq('blocked_on', identifier)
         .is('starts_at', null).is('ends_at', null);
       if (error) throw error;
-      _pbClearFastCache(['blockedDates', 'bookings', 'platformAvailability']);
+      _pbClearFastCache(['blockedDates', 'blockedDateRecords', 'bookings', 'platformAvailability']);
       return;
     }
+    const date = identifier;
     const { error } = await _sb.from('blocked_dates').delete().eq('date', date);
     if (error) console.error('removeBlockedDate:', error);
     _pbClearFastCache(['blockedDates']);

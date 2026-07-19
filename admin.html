@@ -957,6 +957,32 @@ tr:hover td { background: var(--bg2); }
   border-radius: var(--radius-sm); padding: 11px 14px;
   margin-bottom: 8px; font-size: 14px;
 }
+.blk-form-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px; margin-bottom: 14px;
+}
+.blk-reservation-item { gap: 14px; align-items: flex-start; }
+.blk-reservation-copy { min-width: 0; flex: 1; }
+.blk-reservation-title { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-weight: 800; }
+.blk-reservation-meta { color: var(--muted); font-size: .78rem; margin-top: 4px; overflow-wrap: anywhere; }
+.blk-reservation-badge {
+  display: inline-flex; align-items: center; min-height: 24px; padding: 3px 9px;
+  border-radius: 999px; font-size: .68rem; font-weight: 800; letter-spacing: .4px;
+  text-transform: uppercase; background: rgba(var(--green-rgb),.13); color: var(--green);
+}
+.blk-reservation-badge.private-event { background: rgba(70,115,190,.14); color: #4673be; }
+.blk-reservation-badge.maintenance { background: rgba(255,152,0,.14); color: #d77b00; }
+.blk-reservation-badge.closed { background: rgba(229,57,53,.12); color: var(--red); }
+.blk-safety-note {
+  margin: 0 0 16px; padding: 11px 13px; border: 1px solid rgba(var(--green-rgb),.25);
+  border-radius: var(--radius-sm); background: rgba(var(--green-rgb),.07);
+  color: var(--muted); font-size: .78rem; line-height: 1.45;
+}
+@media (max-width: 600px) {
+  .blk-form-grid { grid-template-columns: 1fr; }
+  .blk-reservation-item { flex-direction: column; }
+  .blk-reservation-item .btn { width: 100%; justify-content: center; min-height: 42px; }
+}
 
 /* ── TOASTS ────────────────────────────────────────────── */
 .toasts { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
@@ -2758,17 +2784,36 @@ tr:hover td { background: var(--bg2); }
         <div id="opRegList"><div class="pb-loader"><div class="pb-ball" aria-hidden="true"></div><div class="pb-loader-txt">Loading registrations</div></div></div>
       </div>
 
-      <!-- BLOCKED DATES (kept for maintenance/holidays) -->
-      <div class="panel" style="max-width:580px">
-        <h4>🔒 Blocked Dates</h4>
-        <p style="color:var(--muted);font-size:.84rem;margin:8px 0 16px">Block specific dates for maintenance or holidays. Customers cannot book on these dates.</p>
-        <div style="display:flex;gap:10px;margin-bottom:20px;align-items:flex-end">
-          <div style="flex:1">
-            <label class="fl">Select Date</label>
-            <input type="date" class="fi" id="newBlk"/>
+      <!-- ADVANCE RESERVED / BLOCKED DATES -->
+      <div class="panel" style="max-width:760px">
+        <h4>📅 Reserved &amp; Blocked Dates</h4>
+        <p style="color:var(--muted);font-size:.84rem;margin:8px 0 16px">Reserve one date or a future date range. These dates immediately become unavailable on the public booking calendar.</p>
+        <div class="blk-safety-note">Confirmed and active customer bookings are protected. The system will refuse a new reservation if any selected date already contains a booking.</div>
+        <div class="blk-form-grid">
+          <div>
+            <label class="fl">Start Date</label>
+            <input type="date" class="fi" id="newBlk" onchange="syncBlockedEndDate()"/>
           </div>
-          <button class="btn btn-d" onclick="addBlocked()">🔒 Block Date</button>
+          <div>
+            <label class="fl">End Date <span style="font-weight:500;color:var(--muted)">(optional)</span></label>
+            <input type="date" class="fi" id="newBlkEnd"/>
+          </div>
+          <div>
+            <label class="fl">Availability Label</label>
+            <select class="fi" id="newBlkType">
+              <option value="Reserved">Reserved</option>
+              <option value="Private Event">Private Event</option>
+              <option value="Maintenance">Maintenance</option>
+              <option value="Closed">Closed / Holiday</option>
+            </select>
+          </div>
+          <div>
+            <label class="fl">Private Note <span style="font-weight:500;color:var(--muted)">(optional)</span></label>
+            <input type="text" class="fi" id="newBlkReason" maxlength="200" placeholder="Example: Owner reservation"/>
+          </div>
         </div>
+        <button class="btn btn-d" id="newBlkBtn" onclick="addBlocked()">Reserve Selected Date(s)</button>
+        <div style="height:18px"></div>
         <div id="blkList"><p style="color:var(--muted);font-style:italic">No blocked dates.</p></div>
       </div>
     </div>
@@ -10144,12 +10189,61 @@ function opRenderDateList() {
     : _opDates.map(d => `<div class="blk-item"><span>📅 ${fmtD(d)}</span><button class="btn btn-d btn-sm" onclick="opRemoveDate('${d}')">Remove</button></div>`).join('');
 }
 
+function blockedTodayDate(){
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone:'Asia/Manila', year:'numeric', month:'2-digit', day:'2-digit'
+  }).formatToParts(new Date()).reduce((out, part) => (out[part.type] = part.value, out), {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function syncBlockedEndDate(){
+  const start = $('newBlk')?.value || '';
+  const end = $('newBlkEnd');
+  if (!end) return;
+  end.min = start || blockedTodayDate();
+  if (end.value && start && end.value < start) end.value = start;
+}
+
+function blockedLabelClass(label){
+  return String(label || 'Reserved').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function blockedTimeLabel(record){
+  if (!record?.startsAt || !record?.endsAt) return 'Whole day';
+  const clock = value => {
+    const [hourText, minute = '00'] = String(value).split(':');
+    const hour = Number(hourText);
+    return Number.isInteger(hour) ? `${hour % 12 || 12}:${minute} ${hour >= 12 ? 'PM' : 'AM'}` : value;
+  };
+  return `${clock(record.startsAt)}–${clock(record.endsAt)}`;
+}
+
+function blockedRecordsHtml(records){
+  const upcoming = (records || []).filter(record => record?.blockedOn >= blockedTodayDate());
+  if (!upcoming.length) return '<p style="color:var(--muted);font-style:italic">No upcoming reserved or blocked dates.</p>';
+  return upcoming.map(record => {
+    const label = record.publicLabel || 'Reserved';
+    const note = record.internalReason ? `<div class="blk-reservation-meta">Private note: ${esc(record.internalReason)}</div>` : '';
+    return `<div class="blk-item blk-reservation-item">
+      <div class="blk-reservation-copy">
+        <div class="blk-reservation-title"><span>${esc(fmtD(record.blockedOn))}</span><span class="blk-reservation-badge ${blockedLabelClass(label)}">${esc(label)}</span></div>
+        <div class="blk-reservation-meta">${esc(blockedTimeLabel(record))} · Main Court</div>
+        ${note}
+      </div>
+      <button class="btn btn-d btn-sm" onclick="removeBlocked('${jsArg(record.id || record.blockedOn)}')">Make Available</button>
+    </div>`;
+  }).join('');
+}
+
 async function renderBlocked(){
   if (window.PB_PLATFORM_V1) {
-    const dates = await DB.getBlockedDates();
-    $('blkList').innerHTML = dates.length === 0
-      ? '<p style="color:var(--muted);font-style:italic">No blocked dates.</p>'
-      : dates.map(d => `<div class="blk-item"><span>ðŸ“… ${fmtD(d)}</span><button class="btn btn-d btn-sm" onclick="removeBlocked('${d}')">Remove</button></div>`).join('');
+    const today = blockedTodayDate();
+    if ($('newBlk')) $('newBlk').min = today;
+    if ($('newBlkEnd')) $('newBlkEnd').min = today;
+    const records = typeof DB.getBlockedDateRecords === 'function'
+      ? await DB.getBlockedDateRecords()
+      : (await DB.getBlockedDates()).map(date => ({ id:date, blockedOn:date, publicLabel:'Closed' }));
+    $('blkList').innerHTML = blockedRecordsHtml(records);
     return;
   }
   // Load open play settings
@@ -11291,20 +11385,47 @@ async function saveMaintenance() {
 }
 
 async function addBlocked(){
-  const v=$('newBlk').value;
-  if(!v){toast('Pick a date.','err');return;}
-  const dates=await DB.getBlockedDates();
-  if(dates.includes(v)){toast('Already blocked.','inf');return;}
-  await DB.addBlockedDate(v);
-  $('newBlk').value='';
-  await renderBlocked();
-  toast('Date blocked.');
+  const startDate = $('newBlk')?.value || '';
+  const endDate = $('newBlkEnd')?.value || startDate;
+  const publicLabel = $('newBlkType')?.value || 'Reserved';
+  const internalReason = $('newBlkReason')?.value.trim() || '';
+  if (!startDate) { toast('Choose a start date.', 'err'); return; }
+  if (endDate < startDate) { toast('End date cannot be before the start date.', 'err'); return; }
+  const rangeDays = Math.round((new Date(endDate + 'T00:00:00') - new Date(startDate + 'T00:00:00')) / 86400000) + 1;
+  if (!Number.isFinite(rangeDays) || rangeDays < 1 || rangeDays > 90) {
+    toast('Choose a date range of 90 days or less.', 'err');
+    return;
+  }
+  const button = $('newBlkBtn');
+  const originalText = button?.textContent || 'Reserve Selected Date(s)';
+  if (button) { button.disabled = true; button.textContent = 'Saving…'; }
+  try {
+    const result = await DB.addBlockedDate({ startDate, endDate, publicLabel, internalReason });
+    $('newBlk').value = '';
+    $('newBlkEnd').value = '';
+    $('newBlkReason').value = '';
+    syncBlockedEndDate();
+    await renderBlocked();
+    const count = Number(result?.createdCount || rangeDays);
+    toast(`${count} date${count === 1 ? '' : 's'} reserved.`);
+  } catch (error) {
+    console.error('Reserve date failed:', error);
+    toast(error?.message || 'The selected dates could not be reserved.', 'err');
+  } finally {
+    if (button) { button.disabled = false; button.textContent = originalText; }
+  }
 }
 
-async function removeBlocked(d){
-  await DB.removeBlockedDate(d);
-  await renderBlocked();
-  toast('Date unblocked.','inf');
+async function removeBlocked(identifier){
+  if (!confirm('Make this date available for customer bookings again?')) return;
+  try {
+    await DB.removeBlockedDate(identifier);
+    await renderBlocked();
+    toast('Date is available again.', 'inf');
+  } catch (error) {
+    console.error('Remove reserved date failed:', error);
+    toast(error?.message || 'The reserved date could not be removed.', 'err');
+  }
 }
 
 /* ==============================================
