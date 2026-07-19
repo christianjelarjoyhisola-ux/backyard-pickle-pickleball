@@ -3146,7 +3146,7 @@ tr:hover td { background: var(--bg2); }
       </div>
 
       <!-- BOOKING FEE REMITTANCE — System Owner only (where court owners send fees) -->
-      <div class="panel" id="legacyPlatformRemittancePanel" data-perm="owner_only" style="max-width:680px;margin-bottom:20px;border:1.5px solid rgba(255,160,0,.35);background:rgba(255,160,0,.04)">
+      <div class="panel" id="platformRemittancePanel" data-perm="owner_only" style="max-width:680px;margin-bottom:20px;border:1.5px solid rgba(255,160,0,.35);background:rgba(255,160,0,.04)">
         <h4>🏦 Booking Fee Remittance Account <span style="font-size:.7rem;background:rgba(255,160,0,.15);color:var(--yellow);padding:2px 8px;border-radius:8px;margin-left:6px;font-family:'DM Mono',monospace;letter-spacing:1px">SYSTEM OWNER</span></h4>
         <p style="color:var(--muted);font-size:.84rem;margin:8px 0 14px">This is the GCash account where court owners remit player-paid booking fees by booking period. Shown to them in the Remit Now dialog.</p>
         <div class="frow" style="gap:10px;margin-bottom:10px;">
@@ -3171,6 +3171,10 @@ tr:hover td { background: var(--bg2); }
               <input type="file" accept="image/*" id="platformGcashQrFile" style="display:none" onchange="handlePlatformQrUpload(event)"/>
             </label>
           </div>
+        </div>
+        <div class="fg" style="margin:12px 0 0">
+          <label class="fl" for="platformRemittanceInstructions">Payment Instructions (optional)</label>
+          <textarea class="fi" id="platformRemittanceInstructions" rows="2" placeholder="Example: Use the remittance reference shown in the payment dialog."></textarea>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
           <button class="btn btn-p btn-sm" onclick="savePlatformRemittance()">💾 Save Remittance Account</button>
@@ -3740,6 +3744,7 @@ tr:hover td { background: var(--bg2); }
         <div class="rm-account-row"><div class="rm-account-label">GCash number</div><code class="rm-account-value" id="rmPayAccountNumber">&mdash;</code><button class="btn btn-g btn-sm rm-copy" type="button" onclick="copyRemittanceValue('rmPayAccountNumber')">Copy</button></div>
         <div class="rm-account-row"><div class="rm-account-label">Account name</div><code class="rm-account-value" id="rmPayAccountName">&mdash;</code><button class="btn btn-g btn-sm rm-copy" type="button" onclick="copyRemittanceValue('rmPayAccountName')">Copy</button></div>
         <div class="rm-account-row"><div class="rm-account-label">Reference note</div><code class="rm-account-value" id="rmPayReferenceNote">&mdash;</code><button class="btn btn-g btn-sm rm-copy" type="button" onclick="copyRemittanceValue('rmPayReferenceNote')">Copy</button></div>
+        <div id="rmPayInstructions" hidden style="margin-top:10px;color:var(--muted);font-size:.8rem;line-height:1.5"></div>
         <div class="rm-qr" id="rmPayQrWrap" hidden><div class="rm-account-label" style="margin-bottom:7px">Scan to remit</div><img id="rmPayQr" src="" alt="System owner remittance GCash QR code" /></div>
       </section>
       <section class="rm-step">
@@ -8050,6 +8055,7 @@ async function renderPaymentSettings() {
     const activation = await DB.getTenantActivationSettings();
     await renderMaintRateSettings(activation);
     await renderPlatformActivationSettings(activation);
+    if (Auth.can('owner_only', sess.role)) await renderPlatformRemittanceSettings();
     renderIntegrationStatus().catch(() => {});
     return;
   }
@@ -8115,6 +8121,27 @@ async function renderPaymentSettings() {
   }
 
   renderIntegrationStatus().catch(() => {});
+}
+
+let _platformRemittanceQrData = '';
+
+async function renderPlatformRemittanceSettings() {
+  const panel = $('platformRemittancePanel');
+  if (!panel || !Auth.can('owner_only', sess.role)) return;
+  panel.style.display = '';
+  const destination = await DB.getPlatformRemittanceDestination();
+  $('platformGcashNumInput').value = destination.accountReference || '';
+  $('platformGcashNameInput').value = destination.accountName || '';
+  if ($('platformRemittanceInstructions')) {
+    $('platformRemittanceInstructions').value = destination.instructions || '';
+  }
+  const qr = String(destination.qrUrl || '');
+  $('platformGcashQrPreview').src = qr;
+  $('platformGcashQrPreviewWrap').style.display = qr ? '' : 'none';
+  $('platformRemSummary').textContent = destination.accountReference
+    ? `Court owners remit via GCash: ${destination.accountReference}${destination.accountName ? ` (${destination.accountName})` : ''}`
+    : 'Not configured yet — court owners cannot submit remittance payment.';
+  _platformRemittanceQrData = '';
 }
 /* ==============================================
    BOOKING FEE REMITTANCE LEDGER
@@ -8751,9 +8778,9 @@ async function openRemittancePayment(id) {
   const record = rmRecordById(id);
   if (!record) { toast('Remittance record not found. Please refresh.', 'err'); return; }
   try {
-    const settings = await DB.getSettings();
-    const accountNumber = String(settings.platform_gcash_number || '');
-    const accountName = String(settings.platform_gcash_name || '');
+    const destination = rmPick(_rmState.dashboard, 'payment_destination', 'paymentDestination') || {};
+    const accountNumber = String(rmPick(destination, 'account_reference', 'accountReference') || '');
+    const accountName = String(rmPick(destination, 'account_name', 'accountName') || '');
     if (!accountNumber) { toast('The system owner has not configured a remittance GCash account yet.', 'err'); return; }
     const reference = rmRecordRef(record);
     const amount = rmAmountRemaining(record);
@@ -8773,9 +8800,12 @@ async function openRemittancePayment(id) {
     $('rmPaymentProofPreview').src = '';
     $('rmPaymentProofPreview').style.display = 'none';
     _rmState.proofData = '';
-    const qr = String(settings.platform_gcash_qr || '');
+    const qr = String(rmPick(destination, 'qr_url', 'qrUrl') || '');
     $('rmPayQrWrap').hidden = !qr;
     $('rmPayQr').src = qr || '';
+    const instructions = String(rmPick(destination, 'instructions') || '').trim();
+    $('rmPayInstructions').textContent = instructions;
+    $('rmPayInstructions').hidden = !instructions;
     openRemittanceModal('rmPayModal', '#rmPaymentRef');
   } catch (error) {
     toast(error?.message || 'Could not open remittance payment.', 'err');
@@ -9032,15 +9062,24 @@ async function savePlatformRemittance() {
   if (!Auth.can('owner_only', sess.role)) { toast('Only system owner can edit this.', 'err'); return; }
   const num = ($('platformGcashNumInput')?.value || '').trim();
   const name = ($('platformGcashNameInput')?.value || '').trim();
+  const instructions = ($('platformRemittanceInstructions')?.value || '').trim();
+  if (num.length < 4 || name.length < 2) {
+    toast('Enter the remittance GCash account name and number.', 'err');
+    return;
+  }
   try {
-    await DB.saveSetting('platform_gcash_number', num);
-    await DB.saveSetting('platform_gcash_name', name);
-    const qrSrc = $('platformGcashQrPreview')?.src || '';
-    if (qrSrc.startsWith('data:')) await DB.saveSetting('platform_gcash_qr', qrSrc);
+    await DB.savePlatformRemittanceDestination({
+      accountReference: num,
+      accountName: name,
+      qrData: _platformRemittanceQrData,
+      instructions,
+    });
+    _platformRemittanceQrData = '';
     await renderPaymentSettings();
     toast('✅ Platform remittance saved.');
   } catch (e) {
-    toast('Failed to save remittance settings.', 'err');
+    console.error('[savePlatformRemittance]', e);
+    toast(e?.message || 'Failed to save remittance settings.', 'err');
   }
 }
 
@@ -9050,18 +9089,12 @@ function handlePlatformQrUpload(e) {
   if (!file) return;
   if (file.size > 4 * 1024 * 1024) { toast('Image too large (max 4MB).', 'err'); e.target.value = ''; return; }
   const reader = new FileReader();
-  reader.onload = async ev => {
+  reader.onload = ev => {
     const dataUrl = ev.target.result;
+    _platformRemittanceQrData = String(dataUrl || '');
     $('platformGcashQrPreview').src = dataUrl;
     $('platformGcashQrPreviewWrap').style.display = '';
-    // Auto-save to DB immediately
-    try {
-      await DB.saveSetting('platform_gcash_qr', dataUrl);
-      toast('✅ Platform QR saved! Customers will see it instantly.', 'ok');
-    } catch (err) {
-      console.error('Failed to auto-save QR:', err);
-      toast('Failed to save QR code. Please try again.', 'err');
-    }
+    toast('QR image ready. Click Save Remittance Account to publish it.', 'inf');
   };
   reader.readAsDataURL(file);
 }
@@ -9069,13 +9102,19 @@ function handlePlatformQrUpload(e) {
 async function removePlatformQr() {
   if (!Auth.can('owner_only', sess.role)) { toast('Only system owner can edit this.', 'err'); return; }
   try {
-    await DB.saveSetting('platform_gcash_qr', '');
+    await DB.savePlatformRemittanceDestination({
+      accountReference: ($('platformGcashNumInput')?.value || '').trim(),
+      accountName: ($('platformGcashNameInput')?.value || '').trim(),
+      instructions: ($('platformRemittanceInstructions')?.value || '').trim(),
+      removeQr: true,
+    });
+    _platformRemittanceQrData = '';
     $('platformGcashQrPreview').src = '';
     $('platformGcashQrPreviewWrap').style.display = 'none';
     if ($('platformGcashQrFile')) $('platformGcashQrFile').value = '';
     toast('Platform QR removed.');
   } catch (e) {
-    toast('Failed to remove QR code.', 'err');
+    toast(e?.message || 'Failed to remove QR code.', 'err');
   }
 }
 
@@ -11671,7 +11710,9 @@ function applyPlatformVisibility() {
   });
   if ($('maintFeePanel')) $('maintFeePanel').style.display = 'none';
   if ($('addCourtBtn')) $('addCourtBtn').style.display = 'none';
-  if ($('legacyPlatformRemittancePanel')) $('legacyPlatformRemittancePanel').style.display = 'none';
+  if ($('platformRemittancePanel')) {
+    $('platformRemittancePanel').style.display = Auth.can('owner_only', sess.role) ? '' : 'none';
+  }
 }
 </script>
 <!-- ============================================================

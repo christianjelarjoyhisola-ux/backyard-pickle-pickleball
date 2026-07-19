@@ -2788,68 +2788,37 @@ window.DB = {
   // Financial mutations are RPC-only so the cutoff, immutable booking items,
   // proof attempts, and audit events are committed in one database transaction.
   async getBookingFeeRemittanceDashboard() {
-    const [dashboardResult, historyResult, legacyResult] = await Promise.all([
-      _sb.rpc('get_booking_fee_remittance_dashboard'),
-      _sb.rpc('get_booking_fee_remittance_history', { p_limit: 100, p_before: null }),
-      _sb.from('weekly_fees')
-        .select('id,court_owner_email,week_start,week_end,bookings_count,fee_per_booking,amount_due,status,billed_refs,generated_at,sent_at,due_at,paid_at,paid_ref,paid_note,paid_by_user_id')
-        .eq('status', 'paid')
-        .order('paid_at', { ascending: false }),
+    const tenantArgs = {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
+    };
+    const [dashboardResult, historyResult] = await Promise.all([
+      _sb.rpc('get_booking_fee_remittance_dashboard', tenantArgs),
+      _sb.rpc('get_booking_fee_remittance_history', {
+        ...tenantArgs, p_limit: 100, p_before: null,
+      }),
     ]);
     if (dashboardResult.error) throw new Error(_extractFnError(dashboardResult.error, 'Could not load remittance dashboard'));
     if (historyResult.error) throw new Error(_extractFnError(historyResult.error, 'Could not load remittance history'));
     const dashboard = dashboardResult.data || {};
     const allHistory = Array.isArray(historyResult.data) ? historyResult.data : [];
     const active = Array.isArray(dashboard.open_remittances) ? dashboard.open_remittances : [];
-    const legacyPaid = legacyResult.error ? [] : (legacyResult.data || []).map(row => {
-      const refs = Array.isArray(row.billed_refs) ? row.billed_refs : [];
-      const amount = Number(row.amount_due) || 0;
-      return {
-        id: `legacy-${row.id}`,
-        legacy_weekly_fee_id: row.id,
-        is_legacy: true,
-        remittance_ref: `LEGACY-${String(row.week_start || '').replace(/-/g, '')}-${String(row.id || '').slice(0, 6).toUpperCase()}`,
-        status: 'settled',
-        coverage_start_at: row.week_start ? `${row.week_start}T00:00:00+08:00` : null,
-        cutoff_at: row.week_end ? `${row.week_end}T23:59:59+08:00` : null,
-        cycle_due_on: String(row.due_at || row.week_end || '').slice(0, 10) || null,
-        bookings_count: Number(row.bookings_count) || refs.length,
-        amount_due: amount,
-        amount_settled: amount,
-        remaining_balance: 0,
-        prepared_at: row.generated_at || row.sent_at || null,
-        prepared_by_email: row.court_owner_email || null,
-        settled_at: row.paid_at || null,
-        billed_refs: refs,
-        latest_payment: {
-          amount_submitted: amount,
-          amount_accepted: amount,
-          payment_method: 'legacy',
-          payment_reference: row.paid_ref || '',
-          note: row.paid_note || 'Imported from the previous statement ledger.',
-          status: 'accepted',
-          reviewed_at: row.paid_at || null,
-          reviewed_by_user_id: row.paid_by_user_id || null,
-        },
-      };
-    });
-    const history = [
-      ...allHistory.filter(row => ['settled', 'cancelled'].includes(String(row?.status || '').toLowerCase())),
-      ...legacyPaid,
-    ].sort((a, b) => new Date(b.settled_at || b.prepared_at || 0) - new Date(a.settled_at || a.prepared_at || 0));
-    const historySettledTotal = history
-      .filter(row => String(row?.status || '').toLowerCase() === 'settled')
-      .reduce((sum, row) => sum + (Number(row?.amount_settled ?? row?.amount_due) || 0), 0);
-    const legacySettledTotal = legacyPaid.reduce((sum, row) => sum + (Number(row.amount_settled) || 0), 0);
-    const newSettledTotal = dashboard.settled_total == null
-      ? historySettledTotal - legacySettledTotal
-      : (Number(dashboard.settled_total) || 0);
+    const history = allHistory.sort((a, b) =>
+      new Date(b.settled_at || b.cancelled_at || b.prepared_at || 0)
+      - new Date(a.settled_at || a.cancelled_at || a.prepared_at || 0));
+    const destination = { ...(dashboard.payment_destination || {}) };
+    if (destination.qr_storage_path) {
+      const { data: signed } = await _sb.storage
+        .from('tenant-private')
+        .createSignedUrl(destination.qr_storage_path, 600);
+      destination.qr_url = signed?.signedUrl || '';
+    }
     return {
       ...dashboard,
       live: dashboard.accumulated || {},
       active,
       history,
-      settled_total: newSettledTotal + legacySettledTotal,
+      payment_destination: destination,
     };
   },
 
@@ -2875,6 +2844,8 @@ window.DB = {
 
   async getBookingFeeRemittanceHistory({ limit = 30, before = null } = {}) {
     const { data, error } = await _sb.rpc('get_booking_fee_remittance_history', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
       p_limit: Math.max(1, Math.min(100, Number(limit) || 30)),
       p_before: before || null,
     });
@@ -2884,6 +2855,8 @@ window.DB = {
 
   async getBookingFeeRemittanceDetail(remittanceId) {
     const { data, error } = await _sb.rpc('get_booking_fee_remittance_detail', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
       p_remittance_id: remittanceId,
     });
     if (error) throw new Error(_extractFnError(error, 'Could not load remittance details'));
@@ -2892,6 +2865,8 @@ window.DB = {
 
   async prepareBookingFeeRemittance({ ownerOverride = false, overrideDueOn = null, overrideReason = null } = {}) {
     const { data, error } = await _sb.rpc('prepare_booking_fee_remittance', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
       p_idempotency_key: _remittanceIdempotencyKey('prepare'),
       p_owner_override: ownerOverride === true,
       p_override_due_on: overrideDueOn || null,
@@ -2915,14 +2890,18 @@ window.DB = {
 
     const safeRemittanceId = String(remittanceId || '').replace(/[^a-z0-9-]/gi, '');
     if (!safeRemittanceId) throw new Error('Remittance record is missing.');
+    const tenantId = String(window.Auth?.getSession?.()?.tenantId || '');
+    if (!/^[0-9a-f-]{36}$/i.test(tenantId)) throw new Error('Your tenant session expired. Please sign in again.');
     const objectName = `${Date.now()}-${_remittanceIdempotencyKey('proof').replace(/[^a-z0-9-]/gi, '')}.${image.extension}`;
-    const proofPath = `${safeRemittanceId}/${authData.user.id}/${objectName}`;
+    const proofPath = `${tenantId}/remittances/${safeRemittanceId}/${authData.user.id}/${objectName}`;
     const { error: uploadError } = await _sb.storage
-      .from('remittance-proofs')
+      .from('tenant-private')
       .upload(proofPath, image.bytes, { contentType: image.mimeType, upsert: false });
     if (uploadError) throw new Error(_extractFnError(uploadError, 'Could not upload remittance receipt'));
 
     const { data, error } = await _sb.rpc('submit_booking_fee_remittance', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
       p_remittance_id: remittanceId,
       p_amount: amount == null ? null : Number(amount),
       p_payment_method: String(paymentMethod || 'gcash').toLowerCase(),
@@ -2932,6 +2911,7 @@ window.DB = {
       p_idempotency_key: _remittanceIdempotencyKey('submit'),
     });
     if (error) {
+      await _sb.storage.from('tenant-private').remove([proofPath]).catch(() => {});
       throw new Error(_extractFnError(error, 'Could not submit remittance proof'));
     }
     return data || null;
@@ -2941,7 +2921,7 @@ window.DB = {
     const path = String(proofPath || '').trim();
     if (!path) throw new Error('No remittance receipt is attached.');
     const { data, error } = await _sb.storage
-      .from('remittance-proofs')
+      .from('tenant-private')
       .createSignedUrl(path, Math.max(60, Math.min(900, Number(expiresIn) || 300)));
     if (error || !data?.signedUrl) throw new Error(_extractFnError(error, 'Could not open remittance receipt'));
     return data.signedUrl;
@@ -2960,6 +2940,8 @@ window.DB = {
     const requestedDecision = String(decision || (approve ? 'accept' : 'reject')).toLowerCase();
     const normalizedDecision = requestedDecision === 'approve' ? 'accept' : requestedDecision;
     const { data, error } = await _sb.rpc('review_booking_fee_remittance_payment', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
       p_payment_id: paymentId,
       p_decision: normalizedDecision,
       p_amount_accepted: amountAccepted == null ? null : Number(amountAccepted),
@@ -2972,12 +2954,63 @@ window.DB = {
 
   async cancelBookingFeeRemittance(remittanceId, reason = '') {
     const { data, error } = await _sb.rpc('cancel_booking_fee_remittance', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
       p_remittance_id: remittanceId,
       p_reason: String(reason || '').trim(),
       p_idempotency_key: _remittanceIdempotencyKey('cancel'),
     });
     if (error) throw new Error(_extractFnError(error, 'Could not cancel remittance'));
     return data || null;
+  },
+
+  async getPlatformRemittanceDestination() {
+    const { data, error } = await _sb.rpc('get_platform_remittance_destination', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
+    });
+    if (error) throw new Error(_extractFnError(error, 'Could not load the remittance account'));
+    const destination = { ...(data || {}) };
+    const path = String(destination.qrStoragePath || '');
+    if (path) {
+      const { data: signed, error: signedError } = await _sb.storage
+        .from('tenant-private').createSignedUrl(path, 600);
+      if (!signedError) destination.qrUrl = signed?.signedUrl || '';
+    }
+    return destination;
+  },
+
+  async savePlatformRemittanceDestination({
+    accountName = '', accountReference = '', qrData = '', removeQr = false,
+    instructions = '',
+  } = {}) {
+    const tenantId = String(window.Auth?.getSession?.()?.tenantId || '');
+    if (!/^[0-9a-f-]{36}$/i.test(tenantId)) throw new Error('Your tenant session expired. Please sign in again.');
+    let qrPath = '';
+    if (qrData) {
+      const image = _remittanceProofUpload(qrData);
+      const objectName = `${Date.now()}-${_remittanceIdempotencyKey('qr').replace(/[^a-z0-9-]/gi, '')}.${image.extension}`;
+      qrPath = `${tenantId}/remittances/config/${objectName}`;
+      const { error: uploadError } = await _sb.storage
+        .from('tenant-private')
+        .upload(qrPath, image.bytes, { contentType: image.mimeType, upsert: false });
+      if (uploadError) throw new Error(_extractFnError(uploadError, 'Could not upload the remittance QR image'));
+    }
+
+    const { data, error } = await _sb.rpc('manage_platform_remittance_destination', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
+      p_account_name: String(accountName || '').trim(),
+      p_account_reference: String(accountReference || '').trim(),
+      p_qr_storage_path: qrPath || null,
+      p_remove_qr: removeQr === true,
+      p_instructions: String(instructions || '').trim() || null,
+    });
+    if (error) {
+      if (qrPath) await _sb.storage.from('tenant-private').remove([qrPath]).catch(() => {});
+      throw new Error(_extractFnError(error, 'Could not save the remittance account'));
+    }
+    return data || {};
   },
 
   // ---- LEGACY MONTHLY BILLING (read-only compatibility) ----
