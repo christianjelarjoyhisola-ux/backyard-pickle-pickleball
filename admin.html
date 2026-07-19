@@ -2787,8 +2787,8 @@ tr:hover td { background: var(--bg2); }
       <!-- ADVANCE RESERVED / BLOCKED DATES -->
       <div class="panel" style="max-width:760px">
         <h4>📅 Reserved &amp; Blocked Dates</h4>
-        <p style="color:var(--muted);font-size:.84rem;margin:8px 0 16px">Reserve one date or a future date range. These dates immediately become unavailable on the public booking calendar.</p>
-        <div class="blk-safety-note">Confirmed and active customer bookings are protected. The system will refuse a new reservation if any selected date already contains a booking.</div>
+        <p style="color:var(--muted);font-size:.84rem;margin:8px 0 16px">Reserve a whole day or choose exact hours. For a date range, the same hours apply to every selected date.</p>
+        <div class="blk-safety-note">Confirmed and active customer bookings are protected. The system will refuse a new reservation if its hours overlap an existing booking.</div>
         <div class="blk-form-grid">
           <div>
             <label class="fl">Start Date</label>
@@ -2799,6 +2799,13 @@ tr:hover td { background: var(--bg2); }
             <input type="date" class="fi" id="newBlkEnd"/>
           </div>
           <div>
+            <label class="fl">Time Coverage</label>
+            <select class="fi" id="newBlkCoverage" onchange="syncBlockedTimeMode()">
+              <option value="whole_day">Whole Day</option>
+              <option value="specific_hours">Specific Hours</option>
+            </select>
+          </div>
+          <div>
             <label class="fl">Availability Label</label>
             <select class="fi" id="newBlkType">
               <option value="Reserved">Reserved</option>
@@ -2807,7 +2814,15 @@ tr:hover td { background: var(--bg2); }
               <option value="Closed">Closed / Holiday</option>
             </select>
           </div>
-          <div>
+          <div id="newBlkStartWrap" hidden>
+            <label class="fl">Start Time</label>
+            <select class="fi" id="newBlkStart" onchange="syncBlockedTimeRange()"></select>
+          </div>
+          <div id="newBlkEndWrap" hidden>
+            <label class="fl">End Time</label>
+            <select class="fi" id="newBlkEndTime"></select>
+          </div>
+          <div style="grid-column:1/-1">
             <label class="fl">Private Note <span style="font-weight:500;color:var(--muted)">(optional)</span></label>
             <input type="text" class="fi" id="newBlkReason" maxlength="200" placeholder="Example: Owner reservation"/>
           </div>
@@ -10204,6 +10219,51 @@ function syncBlockedEndDate(){
   if (end.value && start && end.value < start) end.value = start;
 }
 
+function blockedHourLabel(hour){
+  if (hour === 24) return '12:00 AM';
+  return `${hour % 12 || 12}:00 ${hour >= 12 ? 'PM' : 'AM'}`;
+}
+
+function populateBlockedTimePickers(court){
+  const openText = String(court?.opensAt || '06:00');
+  const closeText = String(court?.closesAt || '00:00');
+  const openHour = Number(openText.slice(0, 2));
+  const closeHour = closeText.startsWith('00:00') ? 24 : Number(closeText.slice(0, 2));
+  const safeOpen = Number.isInteger(openHour) && openHour >= 0 && openHour < 24 ? openHour : 6;
+  const safeClose = Number.isInteger(closeHour) && closeHour > safeOpen && closeHour <= 24 ? closeHour : 24;
+  const start = $('newBlkStart');
+  const end = $('newBlkEndTime');
+  if (!start || !end) return;
+  const previousStart = start.value;
+  const previousEnd = end.value;
+  start.innerHTML = Array.from({ length:safeClose - safeOpen }, (_, index) => safeOpen + index)
+    .map(hour => `<option value="${String(hour).padStart(2, '0')}:00:00" data-hour="${hour}">${blockedHourLabel(hour)}</option>`).join('');
+  end.innerHTML = Array.from({ length:safeClose - safeOpen }, (_, index) => safeOpen + index + 1)
+    .map(hour => `<option value="${hour === 24 ? '23:59:59' : String(hour).padStart(2, '0') + ':00:00'}" data-hour="${hour}">${blockedHourLabel(hour)}</option>`).join('');
+  if ([...start.options].some(option => option.value === previousStart)) start.value = previousStart;
+  if ([...end.options].some(option => option.value === previousEnd)) end.value = previousEnd;
+  syncBlockedTimeRange();
+}
+
+function syncBlockedTimeRange(){
+  const start = $('newBlkStart');
+  const end = $('newBlkEndTime');
+  if (!start || !end) return;
+  const startHour = Number(start.selectedOptions[0]?.dataset.hour);
+  [...end.options].forEach(option => { option.disabled = Number(option.dataset.hour) <= startHour; });
+  if (Number(end.selectedOptions[0]?.dataset.hour) <= startHour) {
+    const next = [...end.options].find(option => !option.disabled);
+    if (next) end.value = next.value;
+  }
+}
+
+function syncBlockedTimeMode(){
+  const timed = $('newBlkCoverage')?.value === 'specific_hours';
+  if ($('newBlkStartWrap')) $('newBlkStartWrap').hidden = !timed;
+  if ($('newBlkEndWrap')) $('newBlkEndWrap').hidden = !timed;
+  if (timed) syncBlockedTimeRange();
+}
+
 function blockedLabelClass(label){
   return String(label || 'Reserved').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
 }
@@ -10211,6 +10271,7 @@ function blockedLabelClass(label){
 function blockedTimeLabel(record){
   if (!record?.startsAt || !record?.endsAt) return 'Whole day';
   const clock = value => {
+    if (String(value).startsWith('23:59')) return '12:00 AM';
     const [hourText, minute = '00'] = String(value).split(':');
     const hour = Number(hourText);
     return Number.isInteger(hour) ? `${hour % 12 || 12}:${minute} ${hour >= 12 ? 'PM' : 'AM'}` : value;
@@ -10240,9 +10301,14 @@ async function renderBlocked(){
     const today = blockedTodayDate();
     if ($('newBlk')) $('newBlk').min = today;
     if ($('newBlkEnd')) $('newBlkEnd').min = today;
-    const records = typeof DB.getBlockedDateRecords === 'function'
-      ? await DB.getBlockedDateRecords()
-      : (await DB.getBlockedDates()).map(date => ({ id:date, blockedOn:date, publicLabel:'Closed' }));
+    const [records, courts] = await Promise.all([
+      typeof DB.getBlockedDateRecords === 'function'
+        ? DB.getBlockedDateRecords()
+        : DB.getBlockedDates().then(dates => dates.map(date => ({ id:date, blockedOn:date, publicLabel:'Closed' }))),
+      DB.getCourts(),
+    ]);
+    populateBlockedTimePickers(courts[0]);
+    syncBlockedTimeMode();
     $('blkList').innerHTML = blockedRecordsHtml(records);
     return;
   }
@@ -11389,6 +11455,9 @@ async function addBlocked(){
   const endDate = $('newBlkEnd')?.value || startDate;
   const publicLabel = $('newBlkType')?.value || 'Reserved';
   const internalReason = $('newBlkReason')?.value.trim() || '';
+  const specificHours = $('newBlkCoverage')?.value === 'specific_hours';
+  const startsAt = specificHours ? ($('newBlkStart')?.value || '') : null;
+  const endsAt = specificHours ? ($('newBlkEndTime')?.value || '') : null;
   if (!startDate) { toast('Choose a start date.', 'err'); return; }
   if (endDate < startDate) { toast('End date cannot be before the start date.', 'err'); return; }
   const rangeDays = Math.round((new Date(endDate + 'T00:00:00') - new Date(startDate + 'T00:00:00')) / 86400000) + 1;
@@ -11396,15 +11465,25 @@ async function addBlocked(){
     toast('Choose a date range of 90 days or less.', 'err');
     return;
   }
+  if (specificHours) {
+    const startHour = Number($('newBlkStart')?.selectedOptions[0]?.dataset.hour);
+    const endHour = Number($('newBlkEndTime')?.selectedOptions[0]?.dataset.hour);
+    if (!startsAt || !endsAt || !Number.isFinite(startHour) || !Number.isFinite(endHour) || endHour <= startHour) {
+      toast('Choose a valid start and end time.', 'err');
+      return;
+    }
+  }
   const button = $('newBlkBtn');
   const originalText = button?.textContent || 'Reserve Selected Date(s)';
   if (button) { button.disabled = true; button.textContent = 'Saving…'; }
   try {
-    const result = await DB.addBlockedDate({ startDate, endDate, publicLabel, internalReason });
+    const result = await DB.addBlockedDate({ startDate, endDate, startsAt, endsAt, publicLabel, internalReason });
     $('newBlk').value = '';
     $('newBlkEnd').value = '';
     $('newBlkReason').value = '';
+    $('newBlkCoverage').value = 'whole_day';
     syncBlockedEndDate();
+    syncBlockedTimeMode();
     await renderBlocked();
     const count = Number(result?.createdCount || rangeDays);
     toast(`${count} date${count === 1 ? '' : 's'} reserved.`);
