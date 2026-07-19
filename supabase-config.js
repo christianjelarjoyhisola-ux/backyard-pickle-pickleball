@@ -2764,12 +2764,42 @@ window.DB = {
 
   // Check if user has accepted the current agreement version
   async getAgreement(userId, version = 1) {
-    const { data } = await _sb.from('agreements').select('id, full_name, agreed_at').eq('user_id', userId).eq('version', version).maybeSingle();
+    if (PB_PLATFORM_V1) {
+      const tenantId = Auth.getSession()?.tenantId;
+      if (!tenantId) throw new Error('Your tenant session expired. Please sign in again.');
+      const { data, error } = await _sb.from('agreements')
+        .select('id,agreement_type,version,accepted_at')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .eq('agreement_type', 'platform_access_booking_fee')
+        .eq('version', String(version))
+        .maybeSingle();
+      if (error) throw error;
+      return data || null;
+    }
+    const { data, error } = await _sb.from('agreements').select('id, full_name, agreed_at').eq('user_id', userId).eq('version', version).maybeSingle();
+    if (error) throw error;
     return data || null;
   },
 
   // Save signed agreement
   async saveAgreement({ userId, email, fullName, role, signatureData, ipAddress, userAgent, version = 1 }) {
+    if (PB_PLATFORM_V1) {
+      const result = await _invokeEdgeFunction(
+        `accept-tenant-agreement?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+        {
+          tenantSlug: PB_TENANT_SLUG,
+          fullName,
+          signatureData,
+          version: String(version),
+        },
+        { preferDirect: true }
+      );
+      if (!result?.ok || !result.agreement) {
+        throw new Error('The signed agreement was not recorded.');
+      }
+      return result.agreement;
+    }
     const { error } = await _sb.from('agreements').upsert({
       user_id:        userId,
       email,
