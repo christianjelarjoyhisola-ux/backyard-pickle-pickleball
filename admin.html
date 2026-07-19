@@ -67,6 +67,83 @@ body {
   touch-action: manipulation;
   overflow-x: hidden;
 }
+
+/* Keep the legacy static dashboard out of view while the authenticated
+   tenant, role, and platform feature set are being restored. */
+body.admin-booting {
+  overflow: hidden;
+}
+body.admin-booting > :not(#adminBootScreen):not(script) {
+  visibility: hidden !important;
+}
+#adminBootScreen {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 32%, rgba(145,196,60,.16), transparent 34%),
+    linear-gradient(145deg, #f8fbf5 0%, #eef5e9 100%);
+  color: #102a43;
+}
+body.admin-booting #adminBootScreen {
+  display: flex;
+  visibility: visible !important;
+}
+.admin-boot-card {
+  width: min(360px, 100%);
+  padding: 30px 28px 26px;
+  border: 1px solid rgba(79,127,37,.18);
+  border-radius: 22px;
+  background: rgba(255,255,255,.92);
+  box-shadow: 0 22px 70px rgba(11,53,109,.14);
+  text-align: center;
+}
+.admin-boot-logo {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 8px 24px rgba(11,53,109,.16);
+}
+.admin-boot-card h1 {
+  margin-top: 16px;
+  color: #0b356d;
+  font-size: 1.8rem;
+  line-height: 1;
+}
+.admin-boot-card p {
+  margin-top: 8px;
+  color: #536576;
+  font-size: .88rem;
+}
+.admin-boot-progress {
+  width: 128px;
+  height: 4px;
+  margin: 22px auto 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dfe9da;
+}
+.admin-boot-progress::after {
+  content: '';
+  display: block;
+  width: 48%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4f7f25, #91c43c);
+  animation: adminBootProgress 1s ease-in-out infinite alternate;
+}
+@keyframes adminBootProgress {
+  from { transform: translateX(-8%); }
+  to { transform: translateX(118%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-boot-progress::after { animation: none; width: 100%; }
+}
 button, input, select, textarea, label, a, [role="button"], .btn, .btn-icon, .nav-tab, .op-day {
   touch-action: manipulation;
 }
@@ -2096,7 +2173,15 @@ tr:hover td { background: var(--bg2); }
 
 </style>
 </head>
-<body data-theme="light">
+<body class="admin-booting" data-theme="light">
+<div id="adminBootScreen" role="status" aria-live="polite" aria-label="Loading secure dashboard">
+  <div class="admin-boot-card">
+    <img class="admin-boot-logo" src="backyardpicklelogo.jpg" alt="Backyard Pickle"/>
+    <h1>BACKYARD PICKLE ADMIN</h1>
+    <p>Loading your secure dashboard&hellip;</p>
+    <div class="admin-boot-progress" aria-hidden="true"></div>
+  </div>
+</div>
 <div class="toasts" id="toasts"></div>
 
 <!-- TOP NAV -->
@@ -11574,6 +11659,15 @@ function updateThemeBtn() {
   btn.title = isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode';
 }
 
+function revealAdminDashboard() {
+  requestAnimationFrame(() => {
+    const bootScreen = document.getElementById('adminBootScreen');
+    if (bootScreen) bootScreen.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('admin-booting');
+    document.body.classList.add('admin-ready');
+  });
+}
+
 function logout(){ Auth.logout(); }
 
 document.addEventListener('DOMContentLoaded', async ()=>{
@@ -11656,6 +11750,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   // Show agreement gate for court_owner before entering dashboard
   const gated = await checkAgreementGate(sess);
   if (!gated) await goto(firstAllowed);
+  revealAdminDashboard();
   startAdminRealtime();
   // Housekeeping: purge old abandoned slot-holds so the table stays tidy.
   // Runs in the background (admin is authenticated, so DELETE is permitted by RLS).
