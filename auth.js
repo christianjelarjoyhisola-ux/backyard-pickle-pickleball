@@ -18,8 +18,8 @@ const Auth = (() => {
 
   // Permission matrix — which roles may perform each action.
   const ROLE_PERMISSIONS = {
-    owner:       ['dashboard', 'bookings', 'payment_review', 'reports', 'courts', 'open_play', 'host_open_play', 'maintenance', 'payments', 'accounts', 'booking_delete', 'export', 'settings', 'owner_only', 'fees'],
-    court_owner: ['dashboard', 'bookings', 'payment_review', 'reports', 'courts', 'open_play', 'host_open_play', 'maintenance', 'payments', 'export', 'settings', 'fees'],
+    owner:       ['dashboard', 'bookings', 'payment_review', 'reports', 'courts', 'open_play', 'host_open_play', 'maintenance', 'payments', 'accounts', 'booking_delete', 'export', 'settings', 'owner_only', 'fees', 'remittances'],
+    court_owner: ['dashboard', 'bookings', 'payment_review', 'reports', 'courts', 'open_play', 'host_open_play', 'maintenance', 'payments', 'export', 'settings', 'fees', 'remittances'],
     staff:       ['bookings', 'open_play', 'payment_review'],
     host:        ['host_open_play'],
   };

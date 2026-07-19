@@ -2141,6 +2141,9 @@ tr:hover td { background: var(--bg2); }
     <div class="sb-section" data-perm="host_accounts_view">
       <div class="nav-grp">People &amp; Finance</div>
       <div class="nav-item" data-s="accounts" data-perm="host_accounts_view" onclick="goto('accounts')"><span>&#128101;</span> Host Accounts</div>
+    </div>
+    <div class="sb-section" data-perm="remittances">
+      <div class="nav-grp">Finance</div>
       <div class="nav-item" data-s="remittances" data-perm="remittances" onclick="goto('remittances')"><span>&#129534;</span> Remittances</div>
     </div>
     <div class="sb-section" data-perm="owner_only">
@@ -4697,7 +4700,7 @@ let sess;
 const titles={dash:'Dashboard',bookings:'Bookings',deleted:'Deleted Bookings',payreview:'Payment Review',reports:'Reports',courts:'Courts',accounts:'Accounts',remittances:'Remittances',blocked:'Blocked Dates',hosts:'Host Center',gamemgr:'Game Manager',maintenance:'Maintenance',payments:'Payments'};
 const SECTION_PERM={dash:'dashboard',bookings:'bookings',deleted:'owner_only',payreview:'payment_review',reports:'reports',courts:'courts',accounts:'host_accounts_view',remittances:'remittances',blocked:'open_play',hosts:'host_open_play',gamemgr:'open_play',maintenance:'maintenance',payments:'payments'};
 const SECTION_LOADERS={dash:renderDash,bookings:renderBookings,deleted:renderDeletedBookings,payreview:renderPaymentReview,reports:renderReport,courts:renderCourts,accounts:renderAccounts,remittances:renderRemittances,blocked:renderBlocked,hosts:renderHostCenter,gamemgr:renderGameManager,maintenance:renderMaintenance,payments:renderPaymentSettings};
-const PLATFORM_UNSUPPORTED_SECTIONS = new Set(['deleted','accounts','remittances','hosts','gamemgr','maintenance']);
+const PLATFORM_UNSUPPORTED_SECTIONS = new Set(['deleted','accounts','hosts','gamemgr','maintenance']);
 let _curSection=null;
 async function goto(s){
   if(window.PB_PLATFORM_V1 && PLATFORM_UNSUPPORTED_SECTIONS.has(s)){
