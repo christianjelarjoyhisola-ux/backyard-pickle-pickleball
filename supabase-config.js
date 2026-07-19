@@ -212,6 +212,7 @@ async function _pbPlatformAvailability(date) {
     if (!data || data.tenantSlug !== PB_TENANT_SLUG) {
       throw new Error('Availability is not configured for the current domain.');
     }
+    _pbRememberPlatformBlockedHours(data);
     return data;
   });
 }
@@ -495,6 +496,49 @@ function _pbLocalIntervalHours(startsAt, endsAt, targetDate) {
   if (!Number.isInteger(startHour) || !Number.isInteger(endHour) || endHour <= startHour) return [];
   return Array.from({ length: endHour - startHour }, (_, index) => startHour + index);
 }
+
+const _pbPlatformBlockedHoursByDate = new Map();
+
+function _pbPlatformBlockLabel(value) {
+  const label = String(value || '').trim().toLowerCase();
+  if (label === 'private event') return 'private';
+  if (['reserved', 'maintenance', 'closed', 'blocked'].includes(label)) return label;
+  return 'reserved';
+}
+
+function _pbRememberPlatformBlockedHours(availability) {
+  const date = String(availability?.date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+  const rules = [];
+  for (const block of (availability.blockedDates || [])) {
+    let slots = _pbLocalIntervalHours(block.startsAt, block.endsAt, date);
+    if (!block.startsAt && !block.endsAt) {
+      slots = Array.from({ length: 24 }, (_, hour) => hour);
+    }
+    if (!slots.length) continue;
+    rules.push(Object.freeze({
+      enabled: true,
+      mode: 'specific',
+      dates: Object.freeze([date]),
+      courtId: block.courtId == null ? null : String(block.courtId),
+      slots: Object.freeze([...slots]),
+      label: _pbPlatformBlockLabel(block.label),
+    }));
+  }
+  _pbPlatformBlockedHoursByDate.set(date, Object.freeze(rules));
+}
+
+function _pbPlatformBlockedRuleFor(date, hour, courtId = null) {
+  const rules = _pbPlatformBlockedHoursByDate.get(String(date || '')) || [];
+  const targetHour = Number(hour);
+  const targetCourt = courtId == null ? null : String(courtId);
+  return rules.find(rule =>
+    (rule.courtId == null || rule.courtId === targetCourt) &&
+    rule.slots.includes(targetHour)
+  ) || null;
+}
+
+window.PB_PLATFORM_BLOCKED_RULE_FOR = _pbPlatformBlockedRuleFor;
 
 function _pbPlatformAvailabilityToLegacyBookings(availability, bootstrap) {
   if (!availability) return [];
@@ -1349,6 +1393,7 @@ window.DB = {
           query,
           this.getCourts(),
           _pbPlatformBootstrap(),
+          opts.date ? _pbPlatformAvailability(opts.date) : Promise.resolve(null),
         ]);
         if (error) throw error;
         const courtMap = new Map(courts.map(court => [String(court.id), court]));

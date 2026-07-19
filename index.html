@@ -5136,6 +5136,7 @@ function _checkMaintenanceRule(rule, date, h, courtId) {
   return false;
 }
 function isMaintenanceHour(date, h, courtId = null) {
+  if (window.PB_PLATFORM_BLOCKED_RULE_FOR?.(date, h, courtId)) return true;
   if (!maintenanceConfig) return false;
   if (Array.isArray(maintenanceConfig.rules)) {
     return maintenanceConfig.rules.some(r => _checkMaintenanceRule(r, date, h, courtId));
@@ -5143,6 +5144,8 @@ function isMaintenanceHour(date, h, courtId = null) {
   return _checkMaintenanceRule(maintenanceConfig, date, h, courtId);
 }
 function getMaintenanceRule(date, h, courtId = null) {
+  const platformRule = window.PB_PLATFORM_BLOCKED_RULE_FOR?.(date, h, courtId);
+  if (platformRule) return platformRule;
   if (!maintenanceConfig) return null;
   if (Array.isArray(maintenanceConfig.rules)) {
     return maintenanceConfig.rules.find(r => _checkMaintenanceRule(r, date, h, courtId)) || null;
@@ -6264,6 +6267,10 @@ function isHeldVerifying(b) {
 // True if this booking currently occupies its slot (confirmed/pending always do;
 // verifying only while still within its reservation window).
 function bookingHoldsSlot(b) {
+  // Public tenant closures are rendered by isMaintenanceHour so they keep
+  // their safe label (Reserved, Private Event, Maintenance, or Closed)
+  // instead of appearing as customer bookings.
+  if (b?.status === 'maintenance') return false;
   if (!window.BookingBalance?.holdsSlot?.(b)) return false;
   if (b.status === 'verifying') return isHeldVerifying(b);
   return true;
