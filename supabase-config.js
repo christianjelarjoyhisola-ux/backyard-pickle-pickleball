@@ -366,6 +366,9 @@ function _pbPlatformBookingToLegacy(row, courtMap, timeZone) {
     receiptConfidence: receipt?.confidence == null ? null : Number(receipt.confidence),
     receiptVerifiedAt: receipt?.reviewed_at || receipt?.verified_at || null,
     status,
+    archivedAt: row.archived_at || null,
+    archivedBy: row.archived_by || null,
+    archiveReason: row.archive_reason || null,
     expiresAt: row.expires_at || null,
     createdAt: row.created_at,
   };
@@ -1386,6 +1389,7 @@ window.DB = {
         let query = _sb.from('bookings')
           .select('*, booking_slots(*), receipt_verifications(*), payment_sessions(*)')
           .eq('tenant_id', tenantId)
+          .is('archived_at', null)
           .order('created_at', { ascending: false });
         if (opts.date) query = query.eq('local_booking_date', opts.date);
         if (opts.courtId) query = query.eq('court_id', String(opts.courtId));
@@ -1487,7 +1491,6 @@ window.DB = {
           ? 'reject'
           : null;
       if (decision && booking.receiptVerificationId) {
-        await window.Auth.requireAal2();
         const reviewNote = String(updates?.reviewNote || updates?.forfeitureReason || '').trim();
         const data = await _invokeEdgeFunction(
           `review-payment-receipt?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
@@ -1610,6 +1613,78 @@ window.DB = {
     if (error) { console.error('voidDeleteBookingGroup:', error); throw error; }
     _pbClearFastCache(['bookings']);
     return data || null;
+  },
+
+  async archiveBooking(ref) {
+    if (!PB_PLATFORM_V1) return this.deleteBooking(ref);
+    const result = await _invokeEdgeFunction(
+      `manage-booking-archive?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      { action: 'archive', tenantSlug: PB_TENANT_SLUG, bookingReference: String(ref || '') },
+      { preferDirect: true }
+    );
+    if (!result?.ok) throw new Error(result?.message || result?.error || 'Could not archive the booking.');
+    _pbClearFastCache(['bookings', 'platformAvailability']);
+    return result.booking || null;
+  },
+
+  async getArchivedBookings() {
+    if (!PB_PLATFORM_V1) {
+      const rows = await this.getDeletedBookingArchive({ limit: 250 });
+      return rows
+        .filter(row => row.recoveryStatus !== 'restored')
+        .map(row => ({ ...(row.originalBooking || row.originalBookingRow || {}), archivedAt: row.archivedAt || row.deletedAt, archiveId: row.id }));
+    }
+    const session = await _pbAuthenticatedSession();
+    const tenantId = window.Auth?.getSession?.()?.tenantId;
+    if (!session || !tenantId || window.Auth?.getSession?.()?.role !== 'owner') {
+      throw new Error('Only the System Owner can view archived bookings.');
+    }
+    const [{ data, error }, courts, bootstrap] = await Promise.all([
+      _sb.from('bookings')
+        .select('*, booking_slots(*), receipt_verifications(*), payment_sessions(*)')
+        .eq('tenant_id', tenantId)
+        .filter('archived_at', 'not.is', null)
+        .order('archived_at', { ascending: false })
+        .limit(250),
+      this.getCourts(),
+      _pbPlatformBootstrap(),
+    ]);
+    if (error) throw error;
+    const courtMap = new Map(courts.map(court => [String(court.id), court]));
+    return (data || []).map(row => _pbPlatformBookingToLegacy(
+      row,
+      courtMap,
+      bootstrap?.tenant?.timezone || 'Asia/Manila'
+    ));
+  },
+
+  async restoreArchivedBooking(ref) {
+    if (!PB_PLATFORM_V1) {
+      const rows = await this.getDeletedBookingArchive({ bookingRef: ref, limit: 10 });
+      const entry = rows.find(row => row.recoveryStatus !== 'restored');
+      if (!entry) throw new Error('Archived booking not found.');
+      return this.restoreDeletedBookingArchive(entry.id);
+    }
+    const result = await _invokeEdgeFunction(
+      `manage-booking-archive?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      { action: 'restore', tenantSlug: PB_TENANT_SLUG, bookingReference: String(ref || '') },
+      { preferDirect: true }
+    );
+    if (!result?.ok) throw new Error(result?.message || result?.error || 'Could not restore the booking.');
+    _pbClearFastCache(['bookings', 'platformAvailability']);
+    return result.booking || null;
+  },
+
+  async permanentlyDeleteArchivedBooking(ref) {
+    if (!PB_PLATFORM_V1) throw new Error('Permanent deletion is available only on the protected platform archive.');
+    const result = await _invokeEdgeFunction(
+      `manage-booking-archive?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      { action: 'delete', tenantSlug: PB_TENANT_SLUG, bookingReference: String(ref || '') },
+      { preferDirect: true }
+    );
+    if (!result?.ok) throw new Error(result?.message || result?.error || 'Could not permanently delete the booking.');
+    _pbClearFastCache(['bookings', 'platformAvailability']);
+    return result;
   },
 
   async getDeletedBookingArchive(filters = {}) {
@@ -2235,7 +2310,6 @@ window.DB = {
 
   async uploadTenantPaymentQr({ methodCode, file }) {
     if (!PB_PLATFORM_V1) throw new Error('Payment QR uploads require the platform backend.');
-    await window.Auth.requireAal2();
     const code = String(methodCode || '').trim().toLowerCase();
     if (!/^[a-z][a-z0-9_-]{1,39}$/.test(code)) throw new Error('The payment method is invalid.');
     if (!file) throw new Error('Choose a QR image to upload.');
@@ -2278,7 +2352,6 @@ window.DB = {
       await this.saveSetting('fee_type', mode === 'fixed_per_booking' ? 'flat' : 'per_hour');
       return;
     }
-    await window.Auth.requireAal2();
     const result = await _invokeEdgeFunction(
       `tenant-activation-settings?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
       {
@@ -2350,7 +2423,6 @@ window.DB = {
       await this.saveSetting('public_booking_requested', publicBookingRequested ? '1' : '0');
       return;
     }
-    await window.Auth.requireAal2();
     const result = await _invokeEdgeFunction(
       `tenant-activation-settings?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
       {
@@ -2702,7 +2774,6 @@ window.DB = {
   // Request a short-lived signed URL to view a stored receipt (admin only).
   async getReceiptSignedUrl(bookingRef) {
     if (PB_PLATFORM_V1) {
-      await window.Auth.requireAal2();
       const booking = await this.getBookingByRef(bookingRef);
       if (!booking?.receiptVerificationId || !booking?.receiptImageUrl) {
         throw new Error('No receipt image is attached to this booking.');
@@ -3497,6 +3568,18 @@ window.DB = {
       return booking;
     },
 
+    async permanentlyDeleteArchivedBooking(ref) {
+      if (Auth.getSession()?.role !== 'owner') throw new Error('Only the System Owner can permanently delete archived bookings.');
+      const db = readDb();
+      const before = db.deletedBookingArchive.length;
+      db.deletedBookingArchive = db.deletedBookingArchive.filter(entry =>
+        String(entry.bookingRef) !== String(ref) || entry.recoveryStatus === 'restored'
+      );
+      if (db.deletedBookingArchive.length === before) throw new Error('Archived booking not found.');
+      writeDb(db);
+      return { ok: true, reference: ref, storageCleanupWarning: false };
+    },
+
     async getOpenPlayRegistrations() {
       return readDb().openPlayRegistrations.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
     },
@@ -4097,80 +4180,6 @@ window.Auth = {
     if (!sess) return false;
     if (sess.role === 'owner') return true; // system owner has all access
     return sess.role === role;
-  },
-
-  async getMfaStatus() {
-    if (!PB_SUPABASE_AUTH_CONFIGURED) {
-      return { currentLevel: null, nextLevel: null, verifiedFactors: [], unverifiedFactors: [] };
-    }
-    const [{ data: aal, error: aalError }, { data: factors, error: factorsError }] = await Promise.all([
-      _sb.auth.mfa.getAuthenticatorAssuranceLevel(),
-      _sb.auth.mfa.listFactors(),
-    ]);
-    if (aalError) throw aalError;
-    if (factorsError) throw factorsError;
-    const all = Array.isArray(factors?.all)
-      ? factors.all
-      : [...(factors?.totp || []), ...(factors?.phone || [])];
-    const totp = all.filter(factor => factor?.factor_type === 'totp');
-    return {
-      currentLevel: aal?.currentLevel || null,
-      nextLevel: aal?.nextLevel || null,
-      verifiedFactors: totp.filter(factor => factor.status === 'verified'),
-      unverifiedFactors: totp.filter(factor => factor.status !== 'verified'),
-    };
-  },
-
-  async startTotpEnrollment() {
-    const status = await this.getMfaStatus();
-    if (status.verifiedFactors.length) {
-      return { alreadyEnrolled: true, factor: status.verifiedFactors[0] };
-    }
-    // An abandoned unverified factor cannot reveal its QR secret again. Remove
-    // only those incomplete factors before creating a fresh enrollment.
-    for (const factor of status.unverifiedFactors) {
-      const { error } = await _sb.auth.mfa.unenroll({ factorId: factor.id });
-      if (error) throw error;
-    }
-    const { data, error } = await _sb.auth.mfa.enroll({
-      factorType: 'totp',
-      friendlyName: `Backyard Pickle ${new Date().toISOString().slice(0, 10)}`,
-    });
-    if (error) throw error;
-    if (!data?.id || !data?.totp?.qr_code) throw new Error('Authenticator setup did not return a QR code.');
-    return { alreadyEnrolled: false, factor: data };
-  },
-
-  async verifyTotpCode(code, factorId = null) {
-    const normalizedCode = String(code || '').replace(/\s/g, '');
-    if (!/^\d{6}$/.test(normalizedCode)) throw new Error('Enter the 6-digit code from your authenticator app.');
-    const status = await this.getMfaStatus();
-    const id = factorId || status.verifiedFactors[0]?.id || status.unverifiedFactors[0]?.id;
-    if (!id) throw new Error('No authenticator factor is available. Start setup again.');
-    const { data: challenge, error: challengeError } = await _sb.auth.mfa.challenge({ factorId: id });
-    if (challengeError) throw challengeError;
-    const { data, error } = await _sb.auth.mfa.verify({
-      factorId: id,
-      challengeId: challenge.id,
-      code: normalizedCode,
-    });
-    if (error) throw error;
-    const verified = await this.getMfaStatus();
-    if (verified.currentLevel !== 'aal2') throw new Error('Two-step verification did not complete. Please try again.');
-    return data;
-  },
-
-  async requireAal2() {
-    // Only protected production receipt operations require step-up. Ordinary
-    // dashboard reads intentionally remain available at AAL1.
-    if (!PB_PLATFORM_V1) return true;
-    const status = await this.getMfaStatus();
-    if (status.currentLevel === 'aal2') return true;
-    const error = new Error(status.verifiedFactors.length
-      ? 'Enter your authenticator code to continue.'
-      : 'Set up an authenticator app before accessing payment receipts.');
-    error.code = status.verifiedFactors.length ? 'MFA_CHALLENGE_REQUIRED' : 'MFA_ENROLLMENT_REQUIRED';
-    throw error;
   },
 
   async refreshSessionFromAuth({ remember = null } = {}) {

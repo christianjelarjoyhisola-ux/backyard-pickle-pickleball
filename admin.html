@@ -1800,7 +1800,6 @@ tr:hover td { background: var(--bg2); }
     </div>
     <button class="btn-icon burger" onclick="toggleSidebar()">&#9776;</button>
     <button class="btn-icon" onclick="toggleTheme()" id="themeBtn" title="Toggle Theme"></button>
-    <button class="btn-icon" onclick="openMfaModal()" id="mfaBtn" title="Two-step verification">&#128737;</button>
     <button class="btn-icon" onclick="openChangePwModal()" id="changePwBtn" title="Change Password">&#128273;</button>
     <button class="btn btn-d" onclick="logout()" style="font-size:13px"><span class="sign-out-text">Sign Out</span><span class="sign-out-icon" aria-hidden="true">&#x23FB;</span></button>
   </div>
@@ -1814,6 +1813,7 @@ tr:hover td { background: var(--bg2); }
       <div class="nav-grp">Overview</div>
       <div class="nav-item on" data-s="dash" data-perm="dashboard" onclick="goto('dash')"><span>&#128202;</span> Dashboard</div>
       <div class="nav-item" data-s="bookings" data-perm="bookings" onclick="goto('bookings')"><span>&#128203;</span> Bookings</div>
+      <div class="nav-item" data-s="archive" data-perm="owner_only" onclick="goto('archive')"><span>&#128451;</span> Booking Archive</div>
       <div class="nav-item" data-s="payreview" data-perm="payment_review" onclick="goto('payreview')"><span>&#128269;</span> Payment Review</div>
       <div class="nav-item" data-s="reports" data-perm="reports" onclick="goto('reports')"><span>&#128200;</span> Reports</div>
     </div>
@@ -1986,6 +1986,31 @@ tr:hover td { background: var(--bg2); }
             <button type="button" class="btn btn-g btn-sm" id="bookingPrev" onclick="changeBookingPage(-1)">Previous</button>
             <button type="button" class="btn btn-g btn-sm" id="bookingNext" onclick="changeBookingPage(1)">Next</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOOKING ARCHIVE (SYSTEM OWNER ONLY) -->
+    <div id="sec-archive" class="adm-sec">
+      <div class="toolbar booking-section-toolbar">
+        <div>
+          <h2 style="margin:0">Booking Archive</h2>
+          <div style="font-size:.78rem;color:var(--muted);margin-top:4px">Archived records are hidden from the regular booking list and can be restored.</div>
+        </div>
+        <button class="btn btn-g btn-sm" onclick="renderBookingArchive()">Refresh</button>
+      </div>
+      <div class="tbl-wrap">
+        <div class="tbl-hd booking-filter-shell booking-filter-panel">
+          <div class="filters">
+            <input type="search" id="archiveSearch" class="booking-search-input" placeholder="Search name, ref, email" aria-label="Search archived bookings" autocomplete="off" oninput="renderBookingArchive()"/>
+          </div>
+          <div id="archiveMeta">Loading archived bookings...</div>
+        </div>
+        <div class="tbl-scroll booking-table-scroll">
+          <table>
+            <thead><tr><th>Ref</th><th>Customer</th><th>Court</th><th>Schedule</th><th>Amount</th><th>Status</th><th>Archived On</th><th>Actions</th></tr></thead>
+            <tbody id="archiveBody"><tr><td colspan="8" style="text-align:center;color:var(--muted);padding:28px">Loading archived bookings...</td></tr></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -2516,37 +2541,6 @@ tr:hover td { background: var(--bg2); }
     <div class="m-foot">
       <button class="btn btn-g" onclick="closeModal('pwModal')">Cancel</button>
       <button class="btn btn-p" id="pwSaveBtn" onclick="saveNewPassword()">🔑 Update Password</button>
-    </div>
-  </div>
-</div>
-
-<!-- TOTP MFA SETUP / STEP-UP MODAL -->
-<div class="overlay" id="mfaModal" aria-hidden="true" inert hidden>
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mfaTitle" style="max-width:430px" tabindex="-1">
-    <div class="m-hd">
-      <div><h2 id="mfaTitle">TWO-STEP VERIFICATION</h2><p style="margin:4px 0 0;color:var(--muted);font-size:.76rem">Required only for viewing or deciding payment receipts.</p></div>
-      <button class="m-x" type="button" aria-label="Close" onclick="closeMfaModal()">&#10005;</button>
-    </div>
-    <div class="m-body">
-      <div id="mfaMessage" style="font-size:.82rem;line-height:1.55;color:var(--text2)">Checking authenticator status...</div>
-      <div id="mfaEnrollPanel" style="display:none;text-align:center;margin-top:14px">
-        <button class="btn btn-p" type="button" id="mfaEnrollBtn" onclick="beginMfaEnrollment()">Set up authenticator</button>
-        <div id="mfaQrWrap" style="display:none;margin-top:14px">
-          <img id="mfaQr" alt="Authenticator enrollment QR code" style="width:210px;max-width:80%;background:#fff;border-radius:10px;padding:8px" />
-          <p style="font-size:.74rem;color:var(--muted);margin:10px 0 4px">Scan with Google Authenticator, Microsoft Authenticator, 1Password, or another TOTP app.</p>
-          <div style="font-size:.68rem;color:var(--muted)">Manual key</div>
-          <code id="mfaSecret" style="display:block;word-break:break-all;margin-top:3px;color:var(--text)"></code>
-        </div>
-      </div>
-      <div id="mfaCodePanel" style="display:none;margin-top:16px">
-        <label class="fl" for="mfaCode">6-digit authenticator code</label>
-        <input class="fi" id="mfaCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" />
-      </div>
-      <div id="mfaError" style="display:none;margin-top:10px;color:var(--red);font-size:.76rem" role="alert"></div>
-    </div>
-    <div class="m-foot">
-      <button class="btn btn-g" type="button" onclick="closeMfaModal()">Close</button>
-      <button class="btn btn-p" type="button" id="mfaVerifyBtn" style="display:none" onclick="verifyMfaCode()">Verify</button>
     </div>
   </div>
 </div>
@@ -3533,8 +3527,10 @@ function bookingActionsHtml(b, canDelete){
   const actionRef = b.primaryRef || b.ref;
   if (window.PB_PLATFORM_V1) {
     const canCancel = !['cancelled', 'forfeited', 'completed'].includes(String(b.status || '').toLowerCase());
+    const canArchive = canDelete && ['cancelled', 'forfeited', 'completed'].includes(String(b.status || '').toLowerCase());
     return `${bookingDetailsButton(b)}
-      ${canCancel ? `<button class="btn btn-d btn-sm" onclick="cancelPlatformBooking('${jsArg(actionRef)}')">Cancel</button>` : ''}`;
+      ${canCancel ? `<button class="btn btn-d btn-sm" onclick="cancelPlatformBooking('${jsArg(actionRef)}')">Cancel</button>` : ''}
+      ${canArchive ? `<button class="btn btn-d btn-sm" onclick="archiveBooking('${jsArg(actionRef)}')">Archive</button>` : ''}`;
   }
   const forfeited = b.status === 'forfeited' || b.paymentStatus === 'deposit_retained';
   const hasBalance = b.hostBooking && b.paymentStatus === 'downpayment_paid';
@@ -3726,6 +3722,23 @@ async function resendHostBalanceNotice(ref) {
   }
 }
 function toast(msg,type='ok'){const icons={ok:'✅',err:'❌',inf:'ℹ️'};const el=document.createElement('div');el.className=`toast ${type}`;el.innerHTML=`<span>${icons[type]||''}</span><span></span>`;el.lastElementChild.textContent=String(msg ?? '');$('toasts').appendChild(el);setTimeout(()=>el.remove(),3800);}
+function toastWithAction(message, actionLabel, action, timeout=8000){
+  const el=document.createElement('div');
+  el.className='toast inf';
+  const icon=document.createElement('span'); icon.textContent='ℹ️';
+  const copy=document.createElement('span'); copy.textContent=String(message ?? '');
+  const button=document.createElement('button');
+  button.type='button'; button.className='btn btn-g btn-sm'; button.textContent=String(actionLabel || 'Undo');
+  button.style.marginLeft='8px';
+  let active=true;
+  const timer=setTimeout(()=>{ active=false; el.remove(); },timeout);
+  button.addEventListener('click',async()=>{
+    if(!active) return;
+    active=false; clearTimeout(timer); button.disabled=true;
+    try { await action(); el.remove(); } catch(error) { button.disabled=false; active=true; toast(error?.message || 'The action could not be completed.','err'); }
+  });
+  el.append(icon,copy,button); $('toasts').appendChild(el);
+}
 function closeModal(id){$(id).classList.remove('show');}
 
 let sess;
@@ -3733,9 +3746,9 @@ let sess;
 /* ==============================================
    NAVIGATION
    ============================================== */
-const titles={dash:'Dashboard',bookings:'Bookings',payreview:'Payment Review',reports:'Reports',courts:'Courts',remittances:'Remittances',blocked:'Blocked Dates',payments:'Payments'};
-const SECTION_PERM={dash:'dashboard',bookings:'bookings',payreview:'payment_review',reports:'reports',courts:'courts',remittances:'remittances',blocked:'open_play',payments:'payments'};
-const SECTION_LOADERS={dash:renderDash,bookings:renderBookings,payreview:renderPaymentReview,reports:renderReport,courts:renderCourts,remittances:renderRemittances,blocked:renderBlocked,payments:renderPaymentSettings};
+const titles={dash:'Dashboard',bookings:'Bookings',archive:'Booking Archive',payreview:'Payment Review',reports:'Reports',courts:'Courts',remittances:'Remittances',blocked:'Blocked Dates',payments:'Payments'};
+const SECTION_PERM={dash:'dashboard',bookings:'bookings',archive:'owner_only',payreview:'payment_review',reports:'reports',courts:'courts',remittances:'remittances',blocked:'open_play',payments:'payments'};
+const SECTION_LOADERS={dash:renderDash,bookings:renderBookings,archive:renderBookingArchive,payreview:renderPaymentReview,reports:renderReport,courts:renderCourts,remittances:renderRemittances,blocked:renderBlocked,payments:renderPaymentSettings};
 let _curSection=null;
 async function goto(s){
   if (!SECTION_LOADERS[s] || !$('sec-'+s)) { toast('That dashboard section is unavailable.', 'err'); return; }
@@ -3822,7 +3835,6 @@ async function saveMaintRate() {
   const val = parseFloat($('maintRateInput').value);
   if (isNaN(val) || val < 0) { toast('Please enter a valid rate (0 or more).', 'err'); return; }
   const feeType = document.querySelector('input[name="feeType"]:checked')?.value || 'per_hour';
-  if (window.PB_PLATFORM_V1 && !(await ensureReceiptMfa(saveMaintRate))) return;
   try {
     let savedActivation = null;
     if (window.PB_PLATFORM_V1) {
@@ -4168,6 +4180,48 @@ async function renderBookings(){
   const noCopy = bookingFiltersActive({ q, fd, fs, fp }) ? 'No bookings match these filters.' : 'No bookings yet.';
   const noResults = !mtRowsHtml && !bkRowsHtml ? `<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:28px">${noCopy}</td></tr>` : '';
   $('bookBody').innerHTML = mtRowsHtml + bkRowsHtml + noResults;
+}
+
+async function renderBookingArchive(){
+  if (!sess || !Auth.can('owner_only', sess.role)) {
+    toast('Only the System Owner can access the Booking Archive.', 'err');
+    return;
+  }
+  const body=$('archiveBody');
+  if(body) body.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:28px">Loading archived bookings...</td></tr>';
+  try {
+    let bookings=await DB.getArchivedBookings();
+    const query=String($('archiveSearch')?.value||'').trim().toLowerCase();
+    if(query) bookings=bookings.filter(b=>[b.ref,b.fullName,b.email,b.courtName].some(value=>String(value||'').toLowerCase().includes(query)));
+    if($('archiveMeta')) $('archiveMeta').textContent=`${bookings.length} archived booking${bookings.length===1?'':'s'}`;
+    if(!bookings.length){
+      body.innerHTML=`<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:28px">${query?'No archived bookings match this search.':'No archived bookings.'}</td></tr>`;
+      return;
+    }
+    body.innerHTML=bookings.map(b=>{
+      const archived=b.archivedAt?new Date(b.archivedAt):null;
+      const archivedLabel=archived&&!Number.isNaN(archived.getTime())
+        ? `${archived.toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}<div style="font-size:.72rem;color:var(--muted)">${archived.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true})}</div>`
+        : '--';
+      return `<tr>
+        <td data-label="Ref"><code style="color:var(--green);font-size:.76rem">${esc(b.ref)}</code></td>
+        <td data-label="Customer"><div style="font-weight:600">${esc(b.fullName||'Guest')}</div><div style="font-size:.75rem;color:var(--muted)">${esc(b.email||'')}</div></td>
+        <td data-label="Court">${esc(b.courtName||'Court')}</td>
+        <td data-label="Schedule">${fmtD(b.date)}<div style="font-size:.75rem;font-weight:600">${esc(b.startTime||'')}–${esc(b.endTime||'')}</div></td>
+        <td data-label="Amount">${fmt(b.total||0)}</td>
+        <td data-label="Status">${statusBdg(b.status)}</td>
+        <td data-label="Archived On">${archivedLabel}</td>
+        <td data-label="Actions"><div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-g btn-sm" onclick="restoreArchivedBooking('${jsArg(b.ref)}')">Restore</button>
+          <button class="btn btn-d btn-sm" onclick="permanentlyDeleteArchivedBooking('${jsArg(b.ref)}')">Delete Permanently</button>
+        </div></td>
+      </tr>`;
+    }).join('');
+  } catch(error) {
+    console.error('renderBookingArchive:',error);
+    if($('archiveMeta')) $('archiveMeta').textContent='Archive unavailable';
+    if(body) body.innerHTML=`<tr><td colspan="8" style="text-align:center;color:var(--red);padding:28px">${esc(error?.message||'Could not load archived bookings.')}</td></tr>`;
+  }
 }
 
 function clearFilters(){
@@ -4715,131 +4769,9 @@ async function cancelPlatformBooking(ref) {
   }
 }
 
-let _mfaFactorId = null;
-let _mfaAfterSuccess = null;
-
-function setMfaError(message = '') {
-  const el = $('mfaError');
-  if (!el) return;
-  el.textContent = message;
-  el.style.display = message ? '' : 'none';
-}
-
-async function openMfaModal({ afterSuccess = null } = {}) {
-  _mfaAfterSuccess = typeof afterSuccess === 'function' ? afterSuccess : null;
-  _mfaFactorId = null;
-  setMfaError('');
-  $('mfaMessage').textContent = 'Checking authenticator status...';
-  $('mfaEnrollPanel').style.display = 'none';
-  $('mfaEnrollBtn').style.display = '';
-  $('mfaQrWrap').style.display = 'none';
-  $('mfaQr').removeAttribute('src');
-  $('mfaSecret').textContent = '';
-  $('mfaCodePanel').style.display = 'none';
-  $('mfaVerifyBtn').style.display = 'none';
-  const overlay = $('mfaModal');
-  overlay.hidden = false;
-  overlay.inert = false;
-  overlay.setAttribute('aria-hidden', 'false');
-  overlay.classList.add('show');
-  try {
-    const status = await Auth.getMfaStatus();
-    if (status.currentLevel === 'aal2') {
-      $('mfaMessage').textContent = 'Two-step verification is active for this session. Sensitive payment settings and receipt actions are unlocked.';
-      return;
-    }
-    const verified = status.verifiedFactors[0];
-    if (verified) {
-      _mfaFactorId = verified.id;
-      $('mfaMessage').textContent = 'Enter the current code from your authenticator app to unlock sensitive payment actions.';
-      $('mfaCodePanel').style.display = '';
-      $('mfaVerifyBtn').style.display = '';
-      requestAnimationFrame(() => $('mfaCode')?.focus());
-      return;
-    }
-    $('mfaMessage').textContent = 'Protect payment settings and receipts by linking an authenticator app. Password login will continue to open ordinary dashboard pages.';
-    $('mfaEnrollPanel').style.display = '';
-  } catch (error) {
-    setMfaError(error?.message || 'Could not check two-step verification.');
-  }
-}
-
-function closeMfaModal() {
-  const overlay = $('mfaModal');
-  if (!overlay) return;
-  overlay.classList.remove('show');
-  overlay.setAttribute('aria-hidden', 'true');
-  overlay.inert = true;
-  overlay.hidden = true;
-  if ($('mfaCode')) $('mfaCode').value = '';
-}
-
-async function beginMfaEnrollment() {
-  const button = $('mfaEnrollBtn');
-  if (button) { button.disabled = true; button.textContent = 'Creating secure QR...'; }
-  setMfaError('');
-  try {
-    const result = await Auth.startTotpEnrollment();
-    _mfaFactorId = result.factor.id;
-    if (!result.alreadyEnrolled) {
-      const qr = String(result.factor.totp?.qr_code || '');
-      if (!/^data:image\/(?:svg\+xml|png);/i.test(qr)) throw new Error('Authenticator QR format was not accepted.');
-      $('mfaQr').src = qr;
-      $('mfaSecret').textContent = String(result.factor.totp?.secret || '');
-      $('mfaQrWrap').style.display = '';
-    }
-    $('mfaMessage').textContent = result.alreadyEnrolled
-      ? 'Enter the current code from your authenticator app.'
-      : 'Scan the QR, then enter the 6-digit code to finish setup.';
-    $('mfaCodePanel').style.display = '';
-    $('mfaVerifyBtn').style.display = '';
-    if (button) button.style.display = 'none';
-    requestAnimationFrame(() => $('mfaCode')?.focus());
-  } catch (error) {
-    setMfaError(error?.message || 'Could not start authenticator setup.');
-  } finally {
-    if (button) { button.disabled = false; button.textContent = 'Set up authenticator'; }
-  }
-}
-
-async function verifyMfaCode() {
-  const button = $('mfaVerifyBtn');
-  if (button) { button.disabled = true; button.textContent = 'Verifying...'; }
-  setMfaError('');
-  try {
-    await Auth.verifyTotpCode($('mfaCode')?.value, _mfaFactorId);
-    const continuation = _mfaAfterSuccess;
-    _mfaAfterSuccess = null;
-    closeMfaModal();
-    toast('Two-step verification complete.');
-    if (continuation) await continuation();
-  } catch (error) {
-    setMfaError(error?.message || 'The authenticator code was not accepted.');
-    $('mfaCode')?.select();
-  } finally {
-    if (button) { button.disabled = false; button.textContent = 'Verify'; }
-  }
-}
-
-async function ensureReceiptMfa(afterSuccess) {
-  if (!window.PB_PLATFORM_V1) return true;
-  try {
-    await Auth.requireAal2();
-    return true;
-  } catch (error) {
-    if (!['MFA_CHALLENGE_REQUIRED', 'MFA_ENROLLMENT_REQUIRED'].includes(error?.code)) {
-      toast(error?.message || 'Could not verify receipt access.', 'err');
-      return false;
-    }
-    await openMfaModal({ afterSuccess });
-    return false;
-  }
-}
-
 let _verifyModalLastFocus = null;
 
 async function openVerifyModal(ref, { returnFocus = null } = {}) {
-  if (!(await ensureReceiptMfa(() => openVerifyModal(ref, { returnFocus })))) return;
   _verifyModalLastFocus = returnFocus || document.activeElement;
   const b = await getBookingGroupByRef(ref);
   if (!b) { toast('Booking not found.', 'err'); return; }
@@ -4948,7 +4880,6 @@ async function verifyAndConfirm() {
   const ref = $('verifyModal').dataset.ref;
   if (!ref) return;
   try {
-    if (!(await ensureReceiptMfa(() => verifyAndConfirm()))) return;
     const bkForPay = await getBookingGroupByRef(ref);
     if (isDigitalPayment(bkForPay?.paymentMethod) && !bkForPay?.receiptImageUrl) {
       toast('Cannot confirm: no receipt image is attached to this digital payment.', 'err');
@@ -4991,7 +4922,6 @@ async function resendConfirmationEmail(ref) {
 async function rejectPayment() {
   const ref = $('verifyModal').dataset.ref;
   if (!ref) return;
-  if (!(await ensureReceiptMfa(() => rejectPayment()))) return;
   if (!confirm(`Cancel booking ${ref}? This cannot be undone.`)) return;
   try {
     await updateBookingGroupByRef(ref, { status: 'cancelled', paymentStatus: 'rejected' });
@@ -5003,6 +4933,54 @@ async function rejectPayment() {
     notifyBookingUpdateSafe(ref, 'payment_rejected', 'Payment marked not received by admin.');
   } catch(e) {
     toast(e?.message || 'Failed to cancel booking.', 'err');
+  }
+}
+
+async function archiveBooking(ref){
+  if(!sess||!Auth.can('owner_only',sess.role)){
+    toast('Only the System Owner can archive bookings.','err');
+    return;
+  }
+  if(!confirm(`Move booking ${ref} to the Booking Archive?\n\nYou can restore it later.`)) return;
+  try{
+    await DB.archiveBooking(ref);
+    await Promise.all([renderBookings(),renderDash()]);
+    toastWithAction(`Booking ${ref} moved to the archive.`,'Undo',async()=>{
+      await DB.restoreArchivedBooking(ref);
+      await Promise.all([renderBookings(),renderDash()]);
+      toast(`Booking ${ref} restored.`);
+    });
+  }catch(error){
+    toast(error?.message||'Could not archive the booking.','err');
+  }
+}
+
+async function restoreArchivedBooking(ref){
+  if(!sess||!Auth.can('owner_only',sess.role)){
+    toast('Only the System Owner can restore bookings.','err');
+    return;
+  }
+  try{
+    await DB.restoreArchivedBooking(ref);
+    toast(`Booking ${ref} restored.`);
+    await renderBookingArchive();
+  }catch(error){
+    toast(error?.message||'Could not restore the booking.','err');
+  }
+}
+
+async function permanentlyDeleteArchivedBooking(ref){
+  if(!sess||!Auth.can('owner_only',sess.role)){
+    toast('Only the System Owner can permanently delete bookings.','err');
+    return;
+  }
+  if(!confirm(`Permanently delete booking ${ref}?\n\nThis action cannot be undone.`)) return;
+  try{
+    const result=await DB.permanentlyDeleteArchivedBooking(ref);
+    toast(result?.storageCleanupWarning?'Booking deleted. Its private receipt file needs cleanup.':'Booking permanently deleted.','inf');
+    await renderBookingArchive();
+  }catch(error){
+    toast(error?.message||'Could not permanently delete the booking.','err');
   }
 }
 
@@ -8179,16 +8157,12 @@ document.addEventListener('DOMContentLoaded', async ()=>{
 
   applyRoleVisibility(role);
   applyPlatformVisibility();
-  $('mfaCode')?.addEventListener('keydown', event => {
-    if (event.key === 'Enter') { event.preventDefault(); verifyMfaCode(); }
-  });
 
   // Modal close on overlay click
   document.querySelectorAll('.overlay').forEach(ov=>ov.addEventListener('click',e=>{
     if(e.target!==ov) return;
     if(ov.id==='bookingDetailsModal') closeBookingDetails();
     else if(ov.id==='verifyModal') closeVerifyModal();
-    else if(ov.id==='mfaModal') closeMfaModal();
     else if(['rmPrepareModal','rmPayModal','rmReviewModal','rmDetailModal','rmCancelModal'].includes(ov.id)) closeRemittanceModal(ov.id);
     else ov.classList.remove('show');
   }));
