@@ -6331,6 +6331,10 @@ async function saveCourt(){
   const photo=$('cmPhoto').value||null;
   const rateSchedule=_readTiers();
   if(!name||!rate||isNaN(rate)){toast('Fill all fields.','err');return;}
+  if(rateSchedule){
+    const coverage=validatePricingTierCoverage(rateSchedule,parseInt($('ohOpen')?.value||'6'),parseInt($('ohClose')?.value||'24'));
+    if(!coverage.ok){toast(coverage.message,'err');return;}
+  }
   const court = id
     ? { ...(await DB.getCourts()).find(c=>c.id===id), name, desc, rate, photo, rateSchedule }
     : { id:'c'+Date.now(), name, desc, rate, blocked:false, feats:[], photo, rateSchedule };
@@ -6344,10 +6348,11 @@ async function toggleBlock(id){
   const courts=await DB.getCourts();
   const c=courts.find(x=>x.id===id);
   if(!c) return;
+  if(!c.blocked && courts.length===1 && !confirm('This is the only court. Blocking it will remove all booking times from the public website until you unblock it. Continue?')) return;
   c.blocked=!c.blocked;
   await DB.saveCourt(c);
   await renderCourts();
-  toast(c.blocked?'Court blocked.':'Court unblocked.','inf');
+  toast(c.blocked?'Court blocked. Customers cannot book it until it is unblocked.':'Court unblocked. Public booking is available again.','inf');
 }
 
 async function delCourt(id){
@@ -6482,6 +6487,40 @@ function tierFmtH(h) {
   return `${h % 12 || 12}:00 ${h < 12 ? 'AM' : 'PM'}`;
 }
 
+function pricingTierCoversHour(tier, hour) {
+  const from = Number(tier?.from);
+  let to = Number(tier?.to);
+  let comparison = Number(hour);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || !Number.isFinite(comparison)) return false;
+  if (to <= from) to += 24;
+  if (comparison < from) comparison += 24;
+  return comparison >= from && comparison < to;
+}
+
+function validatePricingTierCoverage(tiers, openHour, closeHour) {
+  const rows = Array.isArray(tiers) ? tiers : [];
+  if (!rows.length) return { ok:false, message:'Add at least one pricing tier.' };
+  if (rows.some(t => !Number.isFinite(Number(t.rate)) || Number(t.rate) <= 0)) {
+    return { ok:false, message:'Every pricing tier must have a rate greater than ₱0.' };
+  }
+  for (let hour = Number(openHour); hour < Number(closeHour); hour++) {
+    const matches = rows.filter(tier => pricingTierCoversHour(tier, hour));
+    if (matches.length === 0) {
+      return {
+        ok:false,
+        message:`No rate covers ${tierFmtH(hour)}–${tierFmtH(hour + 1)}. Make adjacent tiers meet at the same time.`,
+      };
+    }
+    if (matches.length > 1) {
+      return {
+        ok:false,
+        message:`More than one rate covers ${tierFmtH(hour)}–${tierFmtH(hour + 1)}. Remove the overlapping tier times.`,
+      };
+    }
+  }
+  return { ok:true, message:'' };
+}
+
 function renderTiersUI() {
   const c = $('tiersBody');
   if (!c) return;
@@ -6526,10 +6565,12 @@ async function savePricingTiers() {
     const from = parseInt(row.querySelector('.tier-from').value);
     const to   = parseInt(row.querySelector('.tier-to').value);
     const rate = parseFloat(row.querySelector('.tier-rate').value);
-    if (isNaN(from) || isNaN(to) || isNaN(rate) || rate < 0 || from === to) { valid = false; return; }
+    if (isNaN(from) || isNaN(to) || isNaN(rate) || rate <= 0 || from === to) { valid = false; return; }
     tiers.push({ from, to, rate });
   });
-  if (!valid) { toast('Check your tier values — From and To cannot be the same.', 'err'); return; }
+  if (!valid) { toast('Check your tier values — times must differ and every rate must be greater than ₱0.', 'err'); return; }
+  const coverage = validatePricingTierCoverage(tiers, parseInt($('ohOpen').value), parseInt($('ohClose').value));
+  if (!coverage.ok) { toast(coverage.message, 'err'); return; }
   try {
     await DB.saveSetting('pricing_tiers', JSON.stringify(tiers));
     adminTiers = tiers;
@@ -8480,7 +8521,7 @@ async function checkAgreementGate(session) {
 </script>
 
 <script src="supabase.min.js"></script>
-<script src="tenant-config.js?v=20260718-platform-live-v3"></script>
-<script src="supabase-config.js?v=20260718-platform-live-v3"></script>
+<script src="tenant-config.js?v=20260720-court-status-v4"></script>
+<script src="supabase-config.js?v=20260720-court-status-v4"></script>
 </body>
 </html>

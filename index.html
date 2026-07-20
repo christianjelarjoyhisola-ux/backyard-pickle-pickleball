@@ -371,6 +371,15 @@ body.dark .shared-date-display {
 
 /* COURTS — LANDSCAPE LAYOUT */
 .courts { display:flex; flex-direction:column; align-items:stretch; gap:18px; }
+.court-load-state {
+  width:100%; min-height:220px; padding:32px 22px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+  text-align:center; background:var(--card); border:2px solid var(--border); border-radius:var(--r);
+  color:var(--muted);
+}
+.court-load-state-icon { font-size:2rem; line-height:1; }
+.court-load-state strong { color:var(--text); font-size:1rem; }
+.court-load-state span { max-width:440px; font-size:.82rem; line-height:1.5; }
 .cc {
   width:100%; max-width:100%;
   background:var(--card); border:2px solid var(--border);
@@ -5570,13 +5579,17 @@ function getRateForHour(h) {
 }
 
 function getRateForHourFromTiers(h, tiers, fallbackRate = 0) {
-  for (const t of (tiers || [])) {
+  const configuredTiers = Array.isArray(tiers) ? tiers : [];
+  const matches = configuredTiers.filter(t => {
     const inRange = t.from < t.to
       ? (h >= t.from && h < t.to)
       : (h >= t.from || h < t.to);
-    if (inRange) return t.rate;
-  }
-  return (tiers && tiers.length > 0) ? Math.min(...tiers.map(t => t.rate)) : fallbackRate;
+    return inRange && Number(t.rate) > 0;
+  });
+  // Never invent a price when configured tiers contain a gap or overlap. The
+  // secure booking backend applies the same exactly-one-rate requirement.
+  if (configuredTiers.length > 0) return matches.length === 1 ? Number(matches[0].rate) : 0;
+  return Number(fallbackRate || 0);
 }
 
 function getPricingTiersForCourt(c) {
@@ -6905,13 +6918,15 @@ async function onCardDate(courtId, date, options = {}) {
     const isBooked_ = bookedHrs.has(h);
     const isOpenPlay_ = isOpenPlayHour(date, h, courtId);
     const isMaint_ = isMaintenanceHour(date, h, courtId);
+    const slotRate = getRateForHourFromTiers(h, cTiers, c.rate);
     const timeRange = slotTimeLabel(h);
     if (isPast_)    return `<div class="cc-slot-btn past-slot"><div class="csl-time">${timeRange}</div><div class="csl-tag">${isPastDate_ ? 'Past' : 'Done'}</div></div>`;
     if (isBooked_ && verifyingHrs.has(h)) return `<div class="cc-slot-btn processing"><div class="csl-time">${timeRange}</div><div class="csl-tag">Processing...</div></div>`;
     if (isBooked_) return `<div class="cc-slot-btn taken"><div class="csl-time">${timeRange}</div><div class="csl-name">Booked</div></div>`;
     if (isMaint_)  { const _ml=getMaintenanceLabel(date,h,courtId); return `<div class="cc-slot-btn maintenance"><div class="csl-time">${timeRange}</div><div class="csl-tag">${_ml.icon} ${_ml.text}</div></div>`; }
     if (isOpenPlay_) return '';
-    return `<div class="cc-slot-btn" data-h="${h}" onclick="event.stopPropagation(); toggleCardSlot('${courtId}','${date}',${h})"><div class="csl-time">${timeRange}</div><div class="csl-price">₱${getRateForHourFromTiers(h, cTiers, c.rate)}</div></div>`;
+    if (!(slotRate > 0)) return `<div class="cc-slot-btn maintenance"><div class="csl-time">${timeRange}</div><div class="csl-tag">Rate unavailable</div></div>`;
+    return `<div class="cc-slot-btn" data-h="${h}" onclick="event.stopPropagation(); toggleCardSlot('${courtId}','${date}',${h})"><div class="csl-time">${timeRange}</div><div class="csl-price">₱${slotRate}</div></div>`;
   }).join('');
 }
 
@@ -6931,15 +6946,45 @@ async function renderCourts() {
   const selectedDate = selectedCourtBrowseDate();
   const isSelectedToday = selectedDate === today;
   const isSelectedPast = selectedDate < today;
-  const [courts, bookings, , openPlayCountsByCourt] = await Promise.all([
-    DB.getCourts(),
-    DB.getBookings({ date: selectedDate, activeOnly: true }),
-    loadOperatingHours(),
-    DB.getOpenPlayCountsForDate ? DB.getOpenPlayCountsForDate(selectedDate) : Promise.resolve({}),
-  ]);
-  const curHour = isSelectedToday ? nowHour() : (isSelectedPast ? 999 : -1);
   const courtsGrid = $('courtsGrid');
   if (!courtsGrid) return;
+
+  let courts;
+  let bookings;
+  let openPlayCountsByCourt;
+  try {
+    [courts, bookings, , openPlayCountsByCourt] = await Promise.all([
+      DB.getCourts(),
+      DB.getBookings({ date: selectedDate, activeOnly: true }),
+      loadOperatingHours(),
+      DB.getOpenPlayCountsForDate ? DB.getOpenPlayCountsForDate(selectedDate) : Promise.resolve({}),
+    ]);
+  } catch (error) {
+    console.error('Could not load public court availability:', error);
+    courtsGrid.innerHTML = `
+      <div class="court-load-state" role="alert">
+        <div class="court-load-state-icon">&#9888;&#65039;</div>
+        <strong>Could not load court times</strong>
+        <span>Please check your connection and try again. If this continues, contact Backyard Pickle.</span>
+        <button class="btn btn-g btn-sm" type="button" onclick="renderCourts()">Try again</button>
+      </div>`;
+    return;
+  }
+
+  if (!Array.isArray(courts) || courts.length === 0) {
+    courtsGrid.innerHTML = `
+      <div class="court-load-state" role="status">
+        <div class="court-load-state-icon">&#128274;</div>
+        <strong>Main Court is temporarily unavailable</strong>
+        <span>No court hours are published right now. The court may be blocked for maintenance; please try again shortly or contact Backyard Pickle.</span>
+        <button class="btn btn-g btn-sm" type="button" onclick="DB.clearCache?.(); renderCourts()">Check again</button>
+      </div>`;
+    const tabsEl = $('courtTabs');
+    if (tabsEl) { tabsEl.innerHTML = ''; tabsEl.hidden = true; }
+    return;
+  }
+
+  const curHour = isSelectedToday ? nowHour() : (isSelectedPast ? 999 : -1);
   syncSharedCourtDateUI(selectedDate);
   const openPlayTodayByCourt = {};
   courts.forEach(c => {
@@ -7007,6 +7052,7 @@ async function renderCourts() {
           const isBooked_ = bookedHours.has(h);
           const isOpenPlay_ = isOpenPlayHour(selectedDate, h, c.id);
           const isMaint_ = isMaintenanceHour(selectedDate, h, c.id);
+          const slotRate = _cRate(h);
           const isSelectedSlot_ = !!cardSelection && cardSelection.date === selectedDate && cardSelection.slots.includes(h);
           const timeRange = slotTimeLabel(h);
           if (isPast_)    return `<div class="cc-slot-btn past-slot"><div class="csl-time">${timeRange}</div><div class="csl-tag">${isSelectedPast ? 'Past' : 'Done'}</div></div>`;
@@ -7014,7 +7060,8 @@ async function renderCourts() {
           if (isBooked_) return `<div class="cc-slot-btn taken"><div class="csl-time">${timeRange}</div><div class="csl-name">Booked</div></div>`;
           if (isMaint_)  { const _ml=getMaintenanceLabel(selectedDate,h,c.id); return `<div class="cc-slot-btn maintenance"><div class="csl-time">${timeRange}</div><div class="csl-tag">${esc(_ml.icon)} ${esc(_ml.text)}</div></div>`; }
           if (isOpenPlay_) return '';
-          return `<div class="cc-slot-btn${isSelectedSlot_ ? ' selected' : ''}" data-h="${h}" onclick="event.stopPropagation(); toggleCardSlot('${jsArg(c.id)}','${jsArg(selectedDate)}',${h})"><div class="csl-time">${timeRange}</div><div class="csl-price">₱${_cRate(h)}</div></div>`;
+          if (!(slotRate > 0)) return `<div class="cc-slot-btn maintenance"><div class="csl-time">${timeRange}</div><div class="csl-tag">Rate unavailable</div></div>`;
+          return `<div class="cc-slot-btn${isSelectedSlot_ ? ' selected' : ''}" data-h="${h}" onclick="event.stopPropagation(); toggleCardSlot('${jsArg(c.id)}','${jsArg(selectedDate)}',${h})"><div class="csl-time">${timeRange}</div><div class="csl-price">₱${slotRate}</div></div>`;
         }).join('');
     const isSelectedCard = !blk && !!cardSelection && cardSelection.date === selectedDate && cardSelection.slots.length > 0;
     const selectedSummary = isSelectedCard
@@ -7074,6 +7121,11 @@ async function renderCourts() {
 
     </div>`;
   }).join('');
+
+  // Mobile cards default to display:none. Make rendered cards visible before
+  // non-essential stats/animation work so a later UI error cannot leave a
+  // valid availability response looking like an empty page.
+  switchCourtTab('all');
 
   const active = bookings.filter(b => window.BookingBalance?.holdsSlot?.(b));
   const totalRev = fmt(active.reduce((s,b) => s+b.total, 0));
@@ -9984,8 +10036,8 @@ async function submitOpenPlay() {
 }
 </script>
 <script src="supabase.min.js"></script>
-<script src="tenant-config.js?v=20260718-platform-live-v3"></script>
-<script src="supabase-config.js?v=20260718-platform-live-v3"></script>
+<script src="tenant-config.js?v=20260720-court-status-v4"></script>
+<script src="supabase-config.js?v=20260720-court-status-v4"></script>
 
 <!-- MOBILE STICKY BOOK NOW BAR -->
 <div id="mobileBookBar" class="mobile-book-bar" style="display:none">
