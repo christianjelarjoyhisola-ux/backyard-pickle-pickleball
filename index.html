@@ -5722,7 +5722,7 @@ async function findAvailableTimeMatches(date, preferredStart, duration) {
   await loadOperatingHours();
   const [courts, bookings, blockedDates] = await Promise.all([
     DB.getCourts(),
-    DB.getBookings({ date, activeOnly: true }),
+    DB.getBookings({ date, activeOnly: true, publicAvailability: true }),
     DB.getBlockedDates(),
   ]);
   const bookedByCourt = findTimeBookedMap(bookings || []);
@@ -6303,7 +6303,7 @@ async function isLateNightExtensionAvailable(sel, nextDate, blockedDates = []) {
   if (!sel || !nextDate || blockedDates.includes(nextDate)) return false;
   if (getCourtRepair(sel.courtName, nextDate)) return false;
   if (isOpenPlayHour(nextDate, 0, sel.courtId) || isMaintenanceHour(nextDate, 0, sel.courtId)) return false;
-  const bookings = await DB.getBookings({ courtId: sel.courtId, date: nextDate, activeOnly: true });
+  const bookings = await DB.getBookings({ courtId: sel.courtId, date: nextDate, activeOnly: true, publicAvailability: true });
   return !(bookings || []).some(b =>
     String(b.courtId) === String(sel.courtId) &&
     b.date === nextDate &&
@@ -6853,7 +6853,7 @@ async function onCardDate(courtId, date, options = {}) {
   grid.innerHTML = `<div class="cc-slots-empty"><div class="pb-loader mini"><div class="pb-ball" aria-hidden="true"></div><div class="pb-loader-txt">Loading times</div></div></div>`;
 
   const [courts, bookings, blockedDates] = await Promise.all([
-    DB.getCourts(), DB.getBookings({ courtId, date, activeOnly: true }), DB.getBlockedDates(), loadOperatingHours()
+    DB.getCourts(), DB.getBookings({ courtId, date, activeOnly: true, publicAvailability: true }), DB.getBlockedDates(), loadOperatingHours()
   ]);
 
   const c = courts.find(x => x.id === courtId);
@@ -6955,7 +6955,7 @@ async function renderCourts() {
   try {
     [courts, bookings, , openPlayCountsByCourt] = await Promise.all([
       DB.getCourts(),
-      DB.getBookings({ date: selectedDate, activeOnly: true }),
+      DB.getBookings({ date: selectedDate, activeOnly: true, publicAvailability: true }),
       loadOperatingHours(),
       DB.getOpenPlayCountsForDate ? DB.getOpenPlayCountsForDate(selectedDate) : Promise.resolve({}),
     ]);
@@ -7228,7 +7228,7 @@ async function onDate() {
    TIME SLOTS — REAL-TIME AWARE
    ============================================= */
 async function getBookedSlots(cid, date) {
-  const bookings = await DB.getBookings({ courtId: cid, date, activeOnly: true });
+  const bookings = await DB.getBookings({ courtId: cid, date, activeOnly: true, publicAvailability: true });
   const s = new Set();
   bookings.filter(bookingHoldsSlot).forEach(b => {
     b.slots.forEach(h => s.add(h));
@@ -10037,7 +10037,7 @@ async function submitOpenPlay() {
 </script>
 <script src="supabase.min.js"></script>
 <script src="tenant-config.js?v=20260720-court-status-v4"></script>
-<script src="supabase-config.js?v=20260723-reschedule-v1"></script>
+<script src="supabase-config.js?v=20260723-protected-reschedule-v2"></script>
 
 <!-- MOBILE STICKY BOOK NOW BAR -->
 <div id="mobileBookBar" class="mobile-book-bar" style="display:none">

@@ -287,19 +287,102 @@ function _pbZonedHour(timestamp, timeZone) {
   }
 }
 
+function _pbPlatformRescheduleEventToLegacy(event) {
+  const row = event && typeof event === 'object' ? event : {};
+  const email = row.email && typeof row.email === 'object'
+    ? row.email
+    : row.notification && typeof row.notification === 'object'
+      ? row.notification
+      : {};
+  return {
+    id: row.id || row.eventId || row.event_id || null,
+    reasonCode: row.reasonCode || row.reason_code || '',
+    publicReason: row.publicReason || row.public_reason || '',
+    internalNote: row.internalNote || row.internal_note || '',
+    oldStartsAt: row.oldStartsAt || row.old_starts_at || '',
+    oldEndsAt: row.oldEndsAt || row.old_ends_at || '',
+    newStartsAt: row.newStartsAt || row.new_starts_at || '',
+    newEndsAt: row.newEndsAt || row.new_ends_at || '',
+    rescheduledAt: row.rescheduledAt || row.rescheduled_at || row.createdAt || row.created_at || '',
+    rescheduledBy: row.rescheduledBy || row.rescheduled_by || row.actorName || row.actor_name || row.actorEmail || row.actor_email || '',
+    notifyCustomer: row.notifyCustomer ?? row.notify_customer ?? false,
+    emailStatus: row.emailStatus || row.email_status || email.status || '',
+    emailSentAt: row.emailSentAt || row.email_sent_at || email.sentAt || email.sent_at || '',
+    emailDeliveryId: row.emailDeliveryId || row.email_delivery_id || row.emailProviderReference || row.email_provider_reference || email.deliveryId || email.delivery_id || email.providerReference || email.provider_reference || null,
+    emailErrorCode: row.emailErrorCode || row.email_error_code || row.emailLastErrorCode || row.email_last_error_code || email.errorCode || email.error_code || '',
+    emailAttemptCount: Number(row.emailAttemptCount ?? row.email_attempt_count ?? email.attemptCount ?? email.attempt_count ?? 0),
+  };
+}
+
+function _pbPlatformRescheduleEmailToLegacy(email) {
+  const row = email && typeof email === 'object' ? email : {};
+  return {
+    status: String(row.status || ''),
+    deliveryId: row.deliveryId || row.delivery_id || row.providerReference || row.provider_reference || null,
+    errorCode: row.errorCode || row.error_code || '',
+    sentAt: row.sentAt || row.sent_at || '',
+    attemptCount: Number(row.attemptCount ?? row.attempt_count ?? 0),
+  };
+}
+
+function _pbPlatformRescheduleOptionToLegacy(option) {
+  const row = option && typeof option === 'object' ? option : {};
+  const startsAt = row.startsAt || row.starts_at || '';
+  const endsAt = row.endsAt || row.ends_at || '';
+  const startTime = String(row.startTime || row.start_time || String(startsAt).slice(11, 16));
+  const endTime = String(row.endTime || row.end_time || String(endsAt).slice(11, 16));
+  const unavailableReason = String(row.unavailableReason || row.unavailable_reason || '');
+  return {
+    startsAt,
+    endsAt,
+    startTime,
+    endTime,
+    label: String(row.label || `${startTime} - ${endTime}`),
+    available: row.available !== false && !unavailableReason,
+    unavailableReason,
+  };
+}
+
+async function _pbPlatformBookingResponseToLegacy(row) {
+  if (!row || typeof row !== 'object') return null;
+  const bootstrap = await _pbPlatformBootstrap();
+  const courts = (bootstrap?.courts || []).map(_pbPlatformCourtToLegacy);
+  return _pbPlatformBookingToLegacy(
+    row,
+    new Map(courts.map(court => [String(court.id), court])),
+    bootstrap?.tenant?.timezone || 'Asia/Manila',
+  );
+}
+
 function _pbPlatformBookingToLegacy(row, courtMap, timeZone) {
   const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
-  const bookingSlots = Array.isArray(row.booking_slots) ? [...row.booking_slots] : [];
+  const lastReschedule = metadata.lastReschedule && typeof metadata.lastReschedule === 'object'
+    ? metadata.lastReschedule
+    : {};
+  const bookingSlots = Array.isArray(row.booking_slots)
+    ? [...row.booking_slots]
+    : Array.isArray(row.bookingSlots)
+      ? [...row.bookingSlots]
+      : [];
+  const startsAt = row.starts_at || row.startsAt;
+  const endsAt = row.ends_at || row.endsAt;
   const slots = bookingSlots
     .filter(slot => ['held', 'confirmed'].includes(slot.status))
-    .map(slot => _pbZonedHour(slot.starts_at, timeZone))
+    .map(slot => _pbZonedHour(slot.starts_at || slot.startsAt, timeZone))
     .filter(Number.isInteger)
     .sort((a, b) => a - b);
-  const fallbackStart = _pbZonedHour(row.starts_at, timeZone);
-  const duration = Math.max(1, Math.round((new Date(row.ends_at) - new Date(row.starts_at)) / 3600000));
+  const fallbackStart = _pbZonedHour(startsAt, timeZone);
+  const calculatedDuration = Math.round((new Date(endsAt) - new Date(startsAt)) / 3600000);
+  const declaredDuration = Number(row.durationHours ?? row.duration_hours ?? row.duration);
+  const duration = Number.isFinite(calculatedDuration) && calculatedDuration > 0
+    ? calculatedDuration
+    : Number.isFinite(declaredDuration) && declaredDuration > 0
+      ? declaredDuration
+      : 1;
   if (!slots.length && Number.isInteger(fallbackStart)) {
     for (let index = 0; index < duration; index++) slots.push((fallbackStart + index) % 24);
   }
+  const rawStatus = row.status;
   const status = {
     pending_payment: 'verifying',
     payment_review: 'pending',
@@ -307,48 +390,65 @@ function _pbPlatformBookingToLegacy(row, courtMap, timeZone) {
     cancelled: 'cancelled',
     completed: 'completed',
     expired: 'forfeited',
-  }[row.status] || row.status;
+  }[rawStatus] || rawStatus;
+  const rawPaymentStatus = row.payment_status || row.paymentStatus;
   const paymentStatus = {
     unpaid: 'unpaid',
     pending: 'for_verification',
     paid: 'paid',
     refunded: 'refunded',
     rejected: 'rejected',
-  }[row.payment_status] || row.payment_status;
-  const court = courtMap.get(String(row.court_id));
+  }[rawPaymentStatus] || rawPaymentStatus;
+  const courtId = row.court_id || row.courtId;
+  const court = courtMap.get(String(courtId));
   const receipts = Array.isArray(row.receipt_verifications)
     ? [...row.receipt_verifications].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
-    : [];
+    : Array.isArray(row.receiptVerifications)
+      ? [...row.receiptVerifications].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      : [];
   const receipt = receipts[0] || null;
   const paymentSessions = Array.isArray(row.payment_sessions)
     ? [...row.payment_sessions].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
-    : [];
+    : Array.isArray(row.paymentSessions)
+      ? [...row.paymentSessions].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      : [];
   const paymentSession = paymentSessions[0] || null;
-  const paymentPayload = paymentSession?.provider_payload && typeof paymentSession.provider_payload === 'object'
-    ? paymentSession.provider_payload
+  const rawPaymentPayload = paymentSession?.provider_payload || paymentSession?.providerPayload;
+  const paymentPayload = rawPaymentPayload && typeof rawPaymentPayload === 'object'
+    ? rawPaymentPayload
     : {};
+  const rawRescheduleEvents = Array.isArray(row.booking_reschedule_events)
+    ? row.booking_reschedule_events
+    : Array.isArray(row.rescheduleEvents)
+      ? row.rescheduleEvents
+      : Array.isArray(row.reschedule_events)
+        ? row.reschedule_events
+        : [];
+  const rescheduleEvents = rawRescheduleEvents
+    .map(_pbPlatformRescheduleEventToLegacy)
+    .sort((a, b) => String(b.rescheduledAt || '').localeCompare(String(a.rescheduledAt || '')));
   return {
     id: row.id,
-    ref: row.reference,
-    fullName: row.customer_name,
-    contactNumber: row.customer_phone,
-    email: row.customer_email,
-    courtId: row.court_id,
-    courtName: court?.name || 'Court',
-    date: row.local_booking_date,
+    ref: row.reference || row.ref || row.bookingReference,
+    fullName: row.customer_name || row.customerName || row.fullName,
+    contactNumber: row.customer_phone || row.customerPhone || row.contactNumber,
+    email: row.customer_email || row.customerEmail || row.email,
+    courtId,
+    courtName: court?.name || row.courtName || row.court_name || 'Court',
+    date: row.local_booking_date || row.localBookingDate || String(startsAt || '').slice(0, 10),
     slots,
     startTime: slots.length ? _fmtBookingHour(slots[0]) : '',
     endTime: slots.length ? _fmtBookingHour(slots[slots.length - 1] + 1) : '',
     timeLabel: _bookingSlotsTimeLabel(slots),
     duration,
-    rate: Number(row.subtotal_amount || 0) / duration,
-    total: Number(row.total_amount || 0),
-    courtFee: Number(row.subtotal_amount || 0),
-    serviceFee: Number(row.service_fee_amount || 0),
-    downpayment: metadata.fullPaymentOnly ? Number(row.total_amount || 0) : null,
-    bookingType: row.booking_type || 'regular',
+    rate: Number(row.subtotal_amount ?? row.subtotalAmount ?? row.courtFee ?? 0) / duration,
+    total: Number(row.total_amount ?? row.totalAmount ?? row.total ?? 0),
+    courtFee: Number(row.subtotal_amount ?? row.subtotalAmount ?? row.courtFee ?? 0),
+    serviceFee: Number(row.service_fee_amount ?? row.serviceFeeAmount ?? row.serviceFee ?? 0),
+    downpayment: metadata.fullPaymentOnly ? Number(row.total_amount ?? row.totalAmount ?? row.total ?? 0) : null,
+    bookingType: row.booking_type || row.bookingType || 'regular',
     eventType: metadata.eventType || null,
-    eventGuestCount: Number(row.guest_count || 1),
+    eventGuestCount: Number(row.guest_count || row.guestCount || 1),
     eventSetupNotes: metadata.notes || null,
     paymentMethod: (() => {
       const code = String(metadata.paymentMethod || paymentPayload.paymentMethod || '').toLowerCase();
@@ -366,11 +466,16 @@ function _pbPlatformBookingToLegacy(row, courtMap, timeZone) {
     receiptConfidence: receipt?.confidence == null ? null : Number(receipt.confidence),
     receiptVerifiedAt: receipt?.reviewed_at || receipt?.verified_at || null,
     status,
-    archivedAt: row.archived_at || null,
-    archivedBy: row.archived_by || null,
-    archiveReason: row.archive_reason || null,
-    expiresAt: row.expires_at || null,
-    createdAt: row.created_at,
+    platformStatus: rawStatus,
+    startsAt,
+    endsAt,
+    archivedAt: row.archived_at || row.archivedAt || null,
+    archivedBy: row.archived_by || row.archivedBy || null,
+    archiveReason: row.archive_reason || row.archiveReason || null,
+    expiresAt: row.expires_at || row.expiresAt || null,
+    createdAt: row.created_at || row.createdAt,
+    lastRescheduleEventId: lastReschedule.eventId || lastReschedule.event_id || null,
+    rescheduleEvents,
   };
 }
 
@@ -1374,6 +1479,16 @@ window.DB = {
     const opts = filters || {};
     if (PB_PLATFORM_V1) {
       return _pbCached('bookings', opts, PB_FAST_CACHE_MS.bookings, async () => {
+        if (opts.publicAvailability === true) {
+          if (!opts.date) return [];
+          const [availability, bootstrap] = await Promise.all([
+            _pbPlatformAvailability(opts.date),
+            _pbPlatformBootstrap(),
+          ]);
+          return _pbPlatformAvailabilityToLegacyBookings(availability, bootstrap)
+            .filter(row => !opts.courtId || String(row.courtId) === String(opts.courtId));
+        }
+
         const session = await _pbAuthenticatedSession();
         const tenantId = window.Auth?.getSession?.()?.tenantId;
         if (!session || !tenantId) {
@@ -1387,8 +1502,12 @@ window.DB = {
         }
 
         let query = _sb.from('bookings')
-          .select('*, booking_slots(*), receipt_verifications(*), payment_sessions(*)')
+          .select('*, booking_slots(*), receipt_verifications(*), payment_sessions(*), booking_reschedule_events(*)')
           .eq('tenant_id', tenantId)
+          .eq('booking_slots.tenant_id', tenantId)
+          .eq('receipt_verifications.tenant_id', tenantId)
+          .eq('payment_sessions.tenant_id', tenantId)
+          .eq('booking_reschedule_events.tenant_id', tenantId)
           .is('archived_at', null)
           .order('created_at', { ascending: false });
         if (opts.date) query = query.eq('local_booking_date', opts.date);
@@ -1398,7 +1517,6 @@ window.DB = {
           query,
           this.getCourts(),
           _pbPlatformBootstrap(),
-          opts.date ? _pbPlatformAvailability(opts.date) : Promise.resolve(null),
         ]);
         if (error) throw error;
         const courtMap = new Map(courts.map(court => [String(court.id), court]));
@@ -1458,18 +1576,21 @@ window.DB = {
   async getBookingByRef(ref) {
     if (PB_PLATFORM_V1) {
       const session = await _pbAuthenticatedSession();
-      const tenantId = window.Auth?.getSession?.()?.tenantId;
-      if (!session || !tenantId) return null;
-      const { data, error } = await _sb.from('bookings')
-        .select('*, booking_slots(*), receipt_verifications(*), payment_sessions(*)')
-        .eq('tenant_id', tenantId)
-        .eq('reference', String(ref || '').toUpperCase())
-        .maybeSingle();
-      if (error) throw error;
-      if (!data) return null;
+      if (!session) return null;
+      const result = await _invokeEdgeFunction(
+        `tenant-manager-data?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+        {
+          action: 'get-booking',
+          tenantSlug: PB_TENANT_SLUG,
+          bookingReference: String(ref || '').toUpperCase(),
+        },
+        { preferDirect: true }
+      );
+      if (!result?.ok) throw new Error('The tenant booking could not be loaded.');
+      if (!result.booking) return null;
       const [courts, bootstrap] = await Promise.all([this.getCourts(), _pbPlatformBootstrap()]);
       return _pbPlatformBookingToLegacy(
-        data,
+        result.booking,
         new Map(courts.map(court => [String(court.id), court])),
         bootstrap?.tenant?.timezone || 'Asia/Manila'
       );
@@ -1477,6 +1598,37 @@ window.DB = {
     const { data, error } = await _sb.from('bookings').select('*').eq('ref', ref).single();
     if (error) { console.error('getBookingByRef:', error); return null; }
     return rowToBooking(data);
+  },
+
+  async previewBookingReschedule(ref, bookingDate) {
+    if (!PB_PLATFORM_V1) {
+      const error = new Error('Protected reschedule preview is unavailable in legacy mode.');
+      error.code = 'PLATFORM_RESCHEDULE_REQUIRED';
+      throw error;
+    }
+    const result = await _invokeEdgeFunction(
+      `reschedule-booking?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      {
+        action: 'preview',
+        tenantSlug: PB_TENANT_SLUG,
+        bookingReference: String(ref || '').toUpperCase(),
+        bookingDate: String(bookingDate || ''),
+      },
+      { preferDirect: true },
+    );
+    if (!result?.ok || !result.booking) {
+      throw new Error(result?.message || result?.error || 'Available reschedule times could not be loaded.');
+    }
+    return {
+      ...result,
+      booking: await _pbPlatformBookingResponseToLegacy(result.booking),
+      options: Array.isArray(result.options)
+        ? result.options.map(_pbPlatformRescheduleOptionToLegacy)
+        : [],
+      policies: result.policies && typeof result.policies === 'object'
+        ? result.policies
+        : {},
+    };
   },
 
   async updateBooking(ref, updates) {
@@ -1578,46 +1730,81 @@ window.DB = {
     _pbClearFastCache(['bookings']);
   },
 
-  async rescheduleBooking(ref, { date, startHour, duration, reason }) {
-    const booking = await this.getBookingByRef(ref);
-    if (!booking) throw new Error('Booking not found or no longer accessible.');
-    const hour = Number(startHour);
-    const hours = Number(duration);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) || !Number.isInteger(hour) || !Number.isInteger(hours)) {
-      throw new Error('Choose a valid date and start time.');
+  async rescheduleBooking(ref, change = {}) {
+    if (!PB_PLATFORM_V1) {
+      const error = new Error('Protected rescheduling is unavailable in legacy mode.');
+      error.code = 'PLATFORM_RESCHEDULE_REQUIRED';
+      throw error;
     }
-    if (PB_PLATFORM_V1) {
-      if (!booking.id) throw new Error('This platform booking is missing its protected booking ID.');
-      const { data, error } = await _sb.rpc('reschedule_tenant_booking', {
-        p_booking_id: booking.id,
-        p_local_date: date,
-        p_start_time: `${String(hour).padStart(2, '0')}:00:00`,
-        p_duration_hours: hours,
-        p_reason: String(reason || '').trim(),
-      });
-      if (error) throw error;
-      _pbClearFastCache(['bookings', 'platformAvailability']);
-      return data;
-    }
-    const slots = Array.from({ length: hours }, (_, index) => hour + index);
-    const existing = (await this.getBookings()).filter(item =>
-      String(item.ref) !== String(ref) &&
-      String(item.courtId) === String(booking.courtId) &&
-      item.date === date &&
-      !['cancelled','forfeited'].includes(String(item.status || '').toLowerCase())
+    const result = await _invokeEdgeFunction(
+      `reschedule-booking?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      {
+        action: 'reschedule',
+        tenantSlug: PB_TENANT_SLUG,
+        bookingReference: String(ref || '').toUpperCase(),
+        newDate: String(change.newDate || ''),
+        newStartTime: String(change.newStartTime || ''),
+        reasonCode: String(change.reasonCode || ''),
+        publicReason: String(change.publicReason || ''),
+        internalNote: String(change.internalNote || ''),
+        notifyCustomer: change.notifyCustomer === true,
+        idempotencyKey: String(change.idempotencyKey || ''),
+      },
+      { preferDirect: true },
     );
-    if (hasSlotConflict(existing, { slots })) {
-      const conflict = new Error('One or more time slots are no longer available.');
-      conflict.code = '23P01';
-      throw conflict;
+    if (!result?.ok || !result.booking || !result.event) {
+      throw new Error(result?.message || result?.error || 'The booking could not be rescheduled.');
     }
-    return this.updateBooking(ref, {
-      date,
-      startTime: _fmtBookingHour(hour),
-      endTime: _fmtBookingHour(hour + hours),
-      duration: hours,
-      slots,
-    });
+    _pbClearFastCache(['bookings', 'platformAvailability']);
+    const email = _pbPlatformRescheduleEmailToLegacy(result.email);
+    return {
+      ...result,
+      booking: await _pbPlatformBookingResponseToLegacy(result.booking),
+      event: {
+        ..._pbPlatformRescheduleEventToLegacy(result.event),
+        emailStatus: email.status,
+        emailSentAt: email.sentAt,
+        emailDeliveryId: email.deliveryId,
+        emailErrorCode: email.errorCode,
+        emailAttemptCount: email.attemptCount,
+      },
+      email,
+    };
+  },
+
+  async resendBookingRescheduleEmail(ref, eventId) {
+    if (!PB_PLATFORM_V1) {
+      const error = new Error('Protected reschedule email delivery is unavailable in legacy mode.');
+      error.code = 'PLATFORM_RESCHEDULE_REQUIRED';
+      throw error;
+    }
+    const result = await _invokeEdgeFunction(
+      `reschedule-booking?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      {
+        action: 'resend',
+        tenantSlug: PB_TENANT_SLUG,
+        bookingReference: String(ref || '').toUpperCase(),
+        eventId: String(eventId || ''),
+      },
+      { preferDirect: true },
+    );
+    if (!result?.ok || !result.event) {
+      throw new Error(result?.message || result?.error || 'The reschedule email could not be resent.');
+    }
+    _pbClearFastCache(['bookings']);
+    const email = _pbPlatformRescheduleEmailToLegacy(result.email);
+    return {
+      ...result,
+      event: {
+        ..._pbPlatformRescheduleEventToLegacy(result.event),
+        emailStatus: email.status,
+        emailSentAt: email.sentAt,
+        emailDeliveryId: email.deliveryId,
+        emailErrorCode: email.errorCode,
+        emailAttemptCount: email.attemptCount,
+      },
+      email,
+    };
   },
 
   // Stamp a set of bookings as billed on a given weekly statement (idempotent
@@ -2659,18 +2846,6 @@ window.DB = {
       throw new Error(result.reason);
     }
     return _invokeEdgeFunction('send-confirmation-email', _bookingEmailPayload(booking), {
-      allowFailure: !!options.allowFailure,
-    });
-  },
-
-  async sendRescheduleEmail(payload, options = {}) {
-    if (!payload?.email) return { ok: false, skipped: true, reason: 'No customer email' };
-    if (PB_PLATFORM_V1) {
-      const result = { ok: false, skipped: true, reason: 'Platform rescheduling is not enabled.' };
-      if (options.allowFailure) return result;
-      throw new Error(result.reason);
-    }
-    return _invokeEdgeFunction('send-reschedule-email', payload, {
       allowFailure: !!options.allowFailure,
     });
   },
@@ -4136,7 +4311,6 @@ window.DB = {
     async sendHostBalanceNotice() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async processHostBalanceDeadlines() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async getBookingBalanceNotifications() { return []; },
-    async sendRescheduleEmail() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async sendTelegramNotification() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async notifyBookingSubmitted() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async notifyBookingUpdate() { return { ok: true, skipped: true, reason: 'Local data mode' }; },

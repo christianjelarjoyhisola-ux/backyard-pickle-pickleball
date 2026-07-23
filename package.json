@@ -1,6 +1,10 @@
 {
   "name": "backyard-pickle-booking",
   "private": true,
+  "scripts": {
+    "check": "node --check tenant-config.js && node --check supabase-config.js && node --check booking-balance.js && node --check auth.js && node --check _worker.js",
+    "test": "node --test booking-balance.test.js reschedule-workflow.test.js"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",
     "pg": "^8.21.0"

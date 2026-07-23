@@ -897,49 +897,75 @@ tr:hover td { background: var(--bg2); }
 .booking-notice-item { display:flex; justify-content:space-between; gap:12px; padding:9px 10px; border-radius:9px; background:var(--bg2); font-size:.75rem; }
 .booking-notice-item strong { color:var(--text); }
 .booking-notice-item span { color:var(--text3); text-align:right; }
-.rs-modal { width:min(520px,calc(100vw - 28px)); max-width:520px; overflow:hidden; }
-.rs-head { align-items:flex-start; background:linear-gradient(135deg,rgba(74,154,220,.14),transparent); }
-.rs-head-copy h2 { color:#5a9ad4; }
-.rs-head-copy p { margin:4px 0 0; color:var(--text3); font-size:.76rem; line-height:1.35; }
-.rs-body { max-height:min(72vh,720px); overflow:auto; padding:18px; background:var(--bg); }
-.rs-current { padding:14px; border:1px solid var(--border); border-radius:14px; background:var(--surface); }
-.rs-kicker { color:var(--text3); font-size:.64rem; font-weight:900; letter-spacing:.7px; text-transform:uppercase; }
-.rs-current-top { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
-.rs-current-court { margin-top:5px; color:var(--text); font-size:1rem; font-weight:900; }
-.rs-current-customer { max-width:48%; color:var(--text3); font-size:.76rem; text-align:right; overflow-wrap:anywhere; }
-.rs-current-time { display:flex; align-items:center; gap:8px; margin-top:10px; color:var(--yellow); font-size:.84rem; font-weight:800; }
-.rs-section { margin-top:16px; }
-.rs-section-head { display:flex; justify-content:space-between; gap:12px; align-items:end; margin-bottom:8px; }
-.rs-section-title { color:var(--text); font-size:.82rem; font-weight:900; }
-.rs-section-help { color:var(--text3); font-size:.68rem; text-align:right; }
-.rs-date-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
-.rs-date-row .fi { min-height:46px; border-radius:12px; font-weight:800; }
-.rs-date-shortcuts { display:flex; gap:6px; }
-.rs-date-chip,.rs-reason-chip {
-  min-height:42px; padding:8px 11px; border:1px solid var(--border); border-radius:11px;
-  background:var(--surface); color:var(--text2); font:800 .72rem 'DM Sans',sans-serif;
-  cursor:pointer; transition:border-color .18s ease,background .18s ease,color .18s ease,transform .18s ease;
+.reschedule-modal { width:min(760px,calc(100vw - 28px)); max-width:760px; overflow:hidden; }
+.reschedule-modal .m-hd { background:linear-gradient(135deg,rgba(74,154,220,.12),transparent); }
+.reschedule-modal .m-hd h2 { color:#3f7fb7; }
+.reschedule-modal .m-hd p { margin:3px 0 0; color:var(--text3); font-size:.76rem; }
+.reschedule-body { max-height:min(70vh,760px); overflow:auto; padding:18px; background:var(--bg); }
+.reschedule-current {
+  display:grid; grid-template-columns:minmax(0,1fr) auto; gap:16px; align-items:center;
+  padding:15px 16px; border:1px solid var(--border); border-radius:14px;
+  background:var(--surface); box-shadow:var(--shadow);
 }
-.rs-date-chip:hover,.rs-reason-chip:hover { border-color:rgba(74,154,220,.55); color:#5a9ad4; }
-.rs-date-chip:active,.rs-reason-chip:active { transform:scale(.98); }
-.rs-time-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; }
-.rs-time-grid .fi { min-height:46px; border-radius:12px; font-weight:800; }
-.rs-duration-card { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:46px; padding:9px 12px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
-.rs-duration-card span { color:var(--text3); font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.5px; }
-.rs-duration-card strong { color:var(--text); font-size:.84rem; }
-.rs-new-summary { display:flex; align-items:center; gap:10px; margin-top:10px; padding:11px 12px; border:1px solid rgba(var(--green-rgb),.28); border-radius:12px; background:rgba(var(--green-rgb),.08); }
-.rs-new-icon { display:grid; place-items:center; flex:0 0 34px; width:34px; height:34px; border-radius:10px; background:var(--green); color:#fff; font-size:1rem; font-weight:900; }
-.rs-new-summary span { display:block; color:var(--text3); font-size:.64rem; font-weight:900; letter-spacing:.55px; text-transform:uppercase; }
-.rs-new-summary strong { display:block; margin-top:2px; color:var(--text); font-size:.82rem; line-height:1.35; }
-.rs-reasons { display:flex; flex-wrap:wrap; gap:7px; }
-.rs-reason-chip { min-height:38px; border-radius:999px; padding:7px 12px; }
-.rs-reason-chip.active { border-color:#5a9ad4; background:rgba(74,154,220,.14); color:#5a9ad4; box-shadow:0 0 0 2px rgba(74,154,220,.08); }
-.rs-note { min-height:92px; resize:vertical; border-radius:12px; font-size:.84rem; line-height:1.5; }
-.rs-note-meta { display:flex; justify-content:space-between; gap:8px; margin-top:6px; color:var(--text3); font-size:.66rem; }
-.rs-foot { align-items:center; }
-.rs-foot .btn { min-height:44px; justify-content:center; }
-.rs-submit { flex:1; }
-.rs-submit:disabled { opacity:.6; cursor:wait; transform:none; }
+.reschedule-current-label,.reschedule-section-label {
+  color:var(--text3); font-size:.66rem; font-weight:900; letter-spacing:.65px; text-transform:uppercase;
+}
+.reschedule-current-name { margin-top:5px; color:var(--text); font-size:1rem; font-weight:900; }
+.reschedule-current-meta { margin-top:3px; color:var(--text2); font-size:.8rem; line-height:1.45; }
+.reschedule-unchanged {
+  max-width:220px; padding:8px 10px; border-radius:10px; background:var(--green-bg);
+  color:var(--green); font-size:.72rem; font-weight:800; line-height:1.35; text-align:right;
+}
+.reschedule-grid { display:grid; grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr); gap:12px; margin-top:12px; }
+.reschedule-panel { min-width:0; padding:14px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+.reschedule-panel .fg:last-child { margin-bottom:0; }
+.reschedule-date-help { margin-top:6px; color:var(--text3); font-size:.72rem; line-height:1.4; }
+.reschedule-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:10px; }
+.reschedule-option {
+  min-height:52px; padding:9px 10px; border:1px solid var(--border); border-radius:10px;
+  background:var(--bg); color:var(--text); cursor:pointer; font:inherit; text-align:left;
+  transition:border-color .16s,background .16s,transform .16s;
+}
+.reschedule-option:hover { border-color:#5a9ad4; transform:translateY(-1px); }
+.reschedule-option strong { display:block; font-size:.82rem; }
+.reschedule-option span { display:block; margin-top:2px; color:var(--text3); font-size:.66rem; font-weight:800; text-transform:uppercase; letter-spacing:.45px; }
+.reschedule-option.selected { border-color:#5a9ad4; background:rgba(74,154,220,.12); box-shadow:0 0 0 2px rgba(74,154,220,.12); }
+.reschedule-option.selected span { color:#3f7fb7; }
+.reschedule-option:disabled { cursor:not-allowed; opacity:.52; transform:none; }
+.reschedule-options-state {
+  grid-column:1/-1; padding:22px 12px; border:1px dashed var(--border); border-radius:10px;
+  color:var(--text3); font-size:.78rem; line-height:1.45; text-align:center;
+}
+.reschedule-reason-grid { display:grid; grid-template-columns:minmax(0,.72fr) minmax(0,1.28fr); gap:12px; margin-top:12px; }
+.reschedule-notify {
+  display:flex; align-items:flex-start; gap:10px; margin-top:12px; padding:12px 13px;
+  border:1px solid var(--border); border-radius:11px; background:var(--surface); color:var(--text2);
+}
+.reschedule-notify input { width:19px; height:19px; flex:0 0 auto; margin-top:1px; accent-color:var(--green); }
+.reschedule-notify strong { display:block; color:var(--text); font-size:.82rem; }
+.reschedule-notify span { display:block; margin-top:2px; color:var(--text3); font-size:.72rem; line-height:1.4; }
+.reschedule-summary {
+  margin-top:12px; padding:14px; border:1px solid rgba(74,154,220,.3); border-radius:12px;
+  background:rgba(74,154,220,.08);
+}
+.reschedule-summary-title { color:#3f7fb7; font-size:.68rem; font-weight:900; letter-spacing:.55px; text-transform:uppercase; }
+.reschedule-summary-route { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); gap:10px; align-items:center; margin-top:9px; }
+.reschedule-summary-card { min-width:0; padding:10px; border-radius:9px; background:var(--surface); }
+.reschedule-summary-card span { display:block; color:var(--text3); font-size:.64rem; font-weight:850; text-transform:uppercase; }
+.reschedule-summary-card strong { display:block; margin-top:4px; color:var(--text); font-size:.8rem; overflow-wrap:anywhere; }
+.reschedule-summary-arrow { color:#3f7fb7; font-size:1.15rem; font-weight:900; }
+.reschedule-error { margin-top:12px; padding:10px 12px; border:1px solid rgba(194,65,58,.3); border-radius:10px; background:var(--red-bg); color:var(--red); font-size:.76rem; line-height:1.4; }
+.reschedule-history { display:grid; gap:8px; }
+.reschedule-history-item { padding:11px; border:1px solid var(--border); border-radius:10px; background:var(--bg2); }
+.reschedule-history-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.reschedule-history-route { color:var(--text); font-size:.78rem; font-weight:800; line-height:1.45; }
+.reschedule-history-state { flex:0 0 auto; padding:3px 7px; border:1px solid rgba(47,116,84,.24); border-radius:999px; background:rgba(47,116,84,.09); color:var(--green); font-size:.62rem; font-weight:800; letter-spacing:.02em; }
+.reschedule-history-state.superseded { border-color:var(--border); background:var(--bg); color:var(--text3); }
+.reschedule-history-meta { margin-top:4px; color:var(--text3); font-size:.7rem; line-height:1.45; }
+.reschedule-history-note { margin-top:6px; color:var(--text2); font-size:.74rem; line-height:1.45; }
+.reschedule-history-email { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+.reschedule-history-email span { color:var(--text3); font-size:.7rem; }
+.reschedule-history-email .btn { min-height:32px; padding:6px 9px; font-size:.7rem; }
 @media (max-width:700px) {
   .booking-details-body { padding:12px; max-height:72vh; }
   .booking-detail-hero { display:grid; }
@@ -947,21 +973,11 @@ tr:hover td { background: var(--bg2); }
   .booking-detail-grid { grid-template-columns:1fr 1fr; }
   .booking-detail-row { grid-template-columns:1fr; gap:3px; }
   .booking-detail-row strong { text-align:left; }
-}
-@media (max-width:480px) {
-  #rescheduleModal { align-items:flex-end; padding:0; }
-  .rs-modal { width:100%; max-width:none; max-height:94vh; border-radius:22px 22px 0 0; }
-  .rs-modal::before { content:''; display:block; width:42px; height:4px; margin:8px auto -3px; border-radius:999px; background:var(--border); }
-  .rs-head { padding-top:12px; }
-  .rs-body { max-height:calc(94vh - 154px); padding:14px 16px 18px; }
-  .rs-current-top { display:grid; gap:4px; }
-  .rs-current-customer { max-width:none; text-align:left; }
-  .rs-date-row { grid-template-columns:1fr; }
-  .rs-date-shortcuts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
-  .rs-date-chip { padding-inline:6px; }
-  .rs-section { margin-top:14px; }
-  .rs-foot { display:grid; grid-template-columns:.75fr 1.25fr; padding:11px 16px calc(11px + env(safe-area-inset-bottom)); }
-  .rs-foot .btn { width:100%; }
+  .reschedule-body { padding:12px; max-height:72vh; }
+  .reschedule-current,.reschedule-grid,.reschedule-reason-grid { grid-template-columns:1fr; }
+  .reschedule-unchanged { max-width:none; text-align:left; }
+  .reschedule-summary-route { grid-template-columns:1fr; }
+  .reschedule-summary-arrow { transform:rotate(90deg); justify-self:center; line-height:1; }
 }
 .mb-book-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .mb-book-ref { font-size: .75rem; color: var(--green); font-family: 'DM Mono', monospace; overflow-wrap: anywhere; }
@@ -2732,66 +2748,79 @@ tr:hover td { background: var(--bg2); }
 </div>
 
 <!-- RESCHEDULE MODAL -->
-<div class="overlay" id="rescheduleModal" aria-hidden="true" inert>
-  <div class="modal rs-modal" role="dialog" aria-modal="true" aria-labelledby="rescheduleTitle" tabindex="-1">
-    <div class="m-hd rs-head">
-      <div class="rs-head-copy">
-        <h2 id="rescheduleTitle">RESCHEDULE BOOKING</h2>
-        <p>Move the same reservation to a new available time.</p>
-      </div>
+<div class="overlay" id="rescheduleModal" aria-hidden="true" inert hidden>
+  <div class="modal reschedule-modal" role="dialog" aria-modal="true" aria-labelledby="rescheduleTitle" tabindex="-1" onkeydown="rescheduleModalKeydown(event)">
+    <div class="m-hd">
+      <div><h2 id="rescheduleTitle">RESCHEDULE BOOKING</h2><p>Move this reservation safely without changing its payment or total.</p></div>
       <button class="m-x" type="button" aria-label="Close reschedule booking" onclick="closeRescheduleModal()">&#10005;</button>
     </div>
-    <div class="m-body rs-body">
-      <div class="rs-current">
-        <div class="rs-current-top">
-          <div><div class="rs-kicker">Current reservation</div><div class="rs-current-court" id="rsOldCourt">—</div></div>
-          <div class="rs-current-customer" id="rsName">—</div>
+    <div class="reschedule-body">
+      <div class="reschedule-current">
+        <div>
+          <div class="reschedule-current-label">Current reservation</div>
+          <div class="reschedule-current-name" id="rsName">Guest</div>
+          <div class="reschedule-current-meta"><span id="rsOldCourt">Court</span> · <span id="rsOldDate">Date</span> · <span id="rsOldTime">Time</span></div>
         </div>
-        <div class="rs-current-time"><span id="rsOldDate">—</span><span aria-hidden="true">·</span><span id="rsOldTime">—</span></div>
+        <div class="reschedule-unchanged">Same court and duration. Payment status and total stay unchanged.</div>
       </div>
 
-      <div class="rs-section">
-        <div class="rs-section-head"><label class="rs-section-title" for="rsNewDate">Choose a new date</label><span class="rs-section-help">Future dates only</span></div>
-        <div class="rs-date-row">
-          <input type="date" class="fi" id="rsNewDate" onchange="refreshRsAvailability()" />
-          <div class="rs-date-shortcuts" aria-label="Date shortcuts">
-            <button type="button" class="rs-date-chip" onclick="rsUseDateOffset(0)">Today</button>
-            <button type="button" class="rs-date-chip" onclick="rsUseDateOffset(1)">Tomorrow</button>
-            <button type="button" class="rs-date-chip" onclick="rsUseDateOffset(7)">+1 week</button>
+      <div class="reschedule-grid">
+        <section class="reschedule-panel">
+          <div class="reschedule-section-label">1. Choose a date</div>
+          <div class="fg" style="margin:10px 0 0">
+            <label class="fl" for="rsNewDate">New date</label>
+            <input type="date" class="fi" id="rsNewDate" onchange="loadRescheduleOptions()" />
+            <div class="reschedule-date-help" id="rsPolicyCopy">Only server-confirmed available times can be selected.</div>
           </div>
-        </div>
+        </section>
+        <section class="reschedule-panel">
+          <div class="reschedule-section-label">2. Choose a new time</div>
+          <div class="reschedule-options" id="rsOptions" aria-live="polite">
+            <div class="reschedule-options-state">Choose a date to load available times.</div>
+          </div>
+        </section>
       </div>
 
-      <div class="rs-section">
-        <div class="rs-section-head"><label class="rs-section-title" for="rsStartTime">Choose a start time</label><span class="rs-section-help">Duration stays the same</span></div>
-        <div class="rs-time-grid">
-          <select class="fi" id="rsStartTime" onchange="updateRsEndTime()" aria-label="New start time"></select>
-          <div class="rs-duration-card"><span>Duration</span><strong id="rsDurationDisplay">—</strong></div>
-        </div>
-        <input type="hidden" id="rsDuration" value="1" />
-        <div class="rs-new-summary" aria-live="polite">
-          <div class="rs-new-icon" aria-hidden="true">→</div>
-          <div><span>New schedule</span><strong id="rsNewSummary">Select a date and start time</strong></div>
-        </div>
+      <div class="reschedule-reason-grid">
+        <section class="reschedule-panel">
+          <div class="reschedule-section-label">3. Record the reason</div>
+          <div class="fg" style="margin-top:10px">
+            <label class="fl" for="rsReasonCode">Reason category *</label>
+            <select class="fi" id="rsReasonCode" required onchange="updateRescheduleSaveState()">
+              <option value="">Select a reason</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label class="fl" for="rsPublicReason">Customer-facing reason *</label>
+            <textarea class="fi" id="rsPublicReason" rows="3" maxlength="500" required placeholder="Explain clearly why the schedule is changing." style="resize:vertical;line-height:1.5" oninput="updateRescheduleSaveState()"></textarea>
+          </div>
+        </section>
+        <section class="reschedule-panel">
+          <div class="reschedule-section-label">4. Notify the customer</div>
+          <div class="fg" style="margin-top:10px">
+            <label class="fl" for="rsInternalNote">Internal note (optional)</label>
+            <textarea class="fi" id="rsInternalNote" rows="3" minlength="3" maxlength="1000" placeholder="Visible to staff only; never included in the customer email." style="resize:vertical;line-height:1.5"></textarea>
+          </div>
+          <label class="reschedule-notify" for="rsNotifyCustomer">
+            <input type="checkbox" id="rsNotifyCustomer" />
+            <span><strong>Send reschedule email automatically</strong><span id="rsNotifyCopy">The customer will receive the old and new schedule plus your reason.</span></span>
+          </label>
+        </section>
       </div>
 
-      <div class="rs-section">
-        <div class="rs-section-head"><div class="rs-section-title">Why is it moving?</div><span class="rs-section-help">Choose one</span></div>
-        <div class="rs-reasons" id="rsReasons">
-          <button type="button" class="rs-reason-chip" data-reason="customer_request" onclick="selectRsReason('customer_request',this)">Customer request</button>
-          <button type="button" class="rs-reason-chip" data-reason="weather" onclick="selectRsReason('weather',this)">Weather</button>
-          <button type="button" class="rs-reason-chip" data-reason="maintenance" onclick="selectRsReason('maintenance',this)">Court maintenance</button>
-          <button type="button" class="rs-reason-chip" data-reason="schedule_conflict" onclick="selectRsReason('schedule_conflict',this)">Schedule conflict</button>
-          <button type="button" class="rs-reason-chip" data-reason="other" onclick="selectRsReason('other',this)">Other</button>
+      <div class="reschedule-summary" id="rsSummary" hidden>
+        <div class="reschedule-summary-title">Confirm the change</div>
+        <div class="reschedule-summary-route">
+          <div class="reschedule-summary-card"><span>Before</span><strong id="rsSummaryBefore">—</strong></div>
+          <div class="reschedule-summary-arrow" aria-hidden="true">→</div>
+          <div class="reschedule-summary-card"><span>After</span><strong id="rsSummaryAfter">Choose a time</strong></div>
         </div>
-        <label class="fl" for="rsNote" style="margin-top:12px">Message / reason</label>
-        <textarea class="fi rs-note" id="rsNote" maxlength="500" rows="3" oninput="updateRsNoteCount()" placeholder="Add a short explanation for the customer and audit record."></textarea>
-        <div class="rs-note-meta"><span id="rsNotifyHint">The customer will be notified when email is available.</span><span><span id="rsNoteCount">0</span>/500</span></div>
       </div>
+      <div class="reschedule-error" id="rsError" role="alert" hidden></div>
     </div>
-    <div class="m-foot rs-foot">
-      <button class="btn btn-g" type="button" onclick="closeRescheduleModal()">Keep booking</button>
-      <button class="btn btn-p rs-submit" id="rsSaveBtn" type="button" onclick="saveReschedule()">Confirm reschedule</button>
+    <div class="m-foot">
+      <button class="btn btn-g" type="button" onclick="closeRescheduleModal()">Keep Current Booking</button>
+      <button class="btn btn-p" type="button" id="rsSaveBtn" onclick="saveReschedule()" disabled>Confirm Reschedule</button>
     </div>
   </div>
 </div>
@@ -3560,40 +3589,23 @@ function currentBookingActorFields(){
   };
 }
 function bookingDetailsButton(b){
-  if (!(b.gcashRef || (b.receiptStatus && b.receiptStatus !== 'none'))) return '';
-  if (!['gcash','bdopay','maya','bpi','gotyme','pnb'].includes(String(b.paymentMethod || '').toLowerCase())) return '';
-  return `<button class="btn btn-sm" style="background:rgba(200,160,96,.15);color:var(--yellow);border:1px solid rgba(200,160,96,.35);font-weight:700" onclick="openVerifyModal('${jsArg(b.ref)}')">🔍 ${b.status==='pending'?'Verify':'Details'}</button>`;
-}
-function bookingActionsHtml(b, canDelete){
-  return `${bookingDetailsButton(b)}
-    ${b.status!=='cancelled'?`<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#5a9ad4;border:1px solid rgba(74,154,220,.3)" onclick="openRescheduleModal('${jsArg(b.ref)}')">📅 Reschedule</button>`:''}
-    ${b.status==='confirmed' && b.email?`<button class="btn btn-sm" style="background:rgba(var(--green-rgb),.12);color:var(--green);border:1px solid rgba(var(--green-rgb),.3)" onclick="resendConfirmationEmail('${jsArg(b.ref)}')">📧 Resend Email</button>`:''}
-    <select class="fi" style="padding:4px 7px;font-size:.76rem;width:auto" onchange="updateStatus('${jsArg(b.ref)}',this.value)">
-      <option value="pending" ${b.status==='pending'?'selected':''}>Pending</option>
-      <option value="confirmed" ${b.status==='confirmed'?'selected':''}>Confirmed</option>
-      <option value="verifying" ${b.status==='verifying'?'selected':''}>Processing</option>
-      <option value="completed" ${b.status==='completed'?'selected':''}>Completed</option>
-      <option value="cancelled" ${b.status==='cancelled'?'selected':''}>Cancelled</option>
-    </select>
-    ${canDelete?`<button class="btn btn-d btn-sm" onclick="delBooking('${jsArg(b.ref)}')">🗑️</button>`:''}`;
-}
-function bookingPayStateSelect(b){
-  return `<select class="fi" style="padding:4px 7px;font-size:.76rem;width:auto" onchange="updatePaymentStatus('${jsArg(b.ref)}',this.value)">
-    <option value="unpaid" ${(!b.paymentStatus||b.paymentStatus==='unpaid')?'selected':''}>Unpaid</option>
-    <option value="downpayment_paid" ${b.paymentStatus==='downpayment_paid'?'selected':''}>Downpayment Paid</option>
-    <option value="paid" ${b.paymentStatus==='paid'?'selected':''}>Fully Paid</option>
-    <option value="for_verification" ${b.paymentStatus==='for_verification'?'selected':''}>For Verification</option>
-    <option value="rejected" ${b.paymentStatus==='rejected'?'selected':''}>Rejected</option>
-  </select>`;
-}
-function bookingDetailsButton(b){
   const actionRef = b.primaryRef || b.ref;
   return `<button class="btn btn-sm" style="background:rgba(200,160,96,.15);color:var(--yellow);border:1px solid rgba(200,160,96,.35);font-weight:700" onclick="openBookingDetails('${jsArg(actionRef)}')">Details</button>`;
 }
-function bookingCanReschedule(b){
-  const grouped = Array.isArray(b?.items) && b.items.length > 1;
-  const status = String(b?.status || '').toLowerCase();
-  return !grouped && !['cancelled','forfeited','completed','expired'].includes(status);
+function canRescheduleBooking(b) {
+  if (!b || b.archivedAt || (Array.isArray(b.items) && b.items.length > 1)) return false;
+  if (!['owner','court_owner'].includes(String(sess?.role || '').toLowerCase())) return false;
+  const platformStatus = String(b.platformStatus || (b.status === 'pending' ? 'payment_review' : b.status) || '').toLowerCase();
+  if (!['confirmed','payment_review'].includes(platformStatus)) return false;
+  if (b.endsAt) {
+    const endMs = new Date(b.endsAt).getTime();
+    if (Number.isFinite(endMs)) return endMs > Date.now();
+  }
+  const slots = Array.isArray(b.slots) ? b.slots.map(Number).filter(Number.isFinite) : [];
+  const endHour = slots.length ? Math.max(...slots) + 1 : bookingStartHour(b) + Math.max(1, Number(b.duration || 1));
+  const end = new Date(`${b.date || ''}T${String(endHour % 24).padStart(2,'0')}:00:00`);
+  if (endHour >= 24) end.setDate(end.getDate() + Math.floor(endHour / 24));
+  return Number.isFinite(end.getTime()) && end.getTime() > Date.now();
 }
 function bookingCanCancel(b){
   return !['cancelled','forfeited','completed','expired'].includes(String(b?.status || '').toLowerCase());
@@ -3605,14 +3617,15 @@ function bookingActionsHtml(b, canDelete){
     const canCancel = bookingCanCancel(b);
     const canArchive = canDelete && ['cancelled', 'forfeited', 'completed'].includes(String(b.status || '').toLowerCase());
     return `${bookingDetailsButton(b)}
-      ${bookingCanReschedule(b) ? `<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#5a9ad4;border:1px solid rgba(74,154,220,.3)" onclick="openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>` : ''}
+      ${canRescheduleBooking(b) ? `<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#3f7fb7;border:1px solid rgba(74,154,220,.3);font-weight:700" onclick="openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>` : ''}
+      ${b.status==='confirmed' && b.email ? `<button class="btn btn-sm" style="background:rgba(var(--green-rgb),.12);color:var(--green);border:1px solid rgba(var(--green-rgb),.3)" onclick="resendConfirmationEmail('${jsArg(actionRef)}')">Resend Email</button>` : ''}
       ${canCancel ? `<button class="btn btn-d btn-sm" onclick="cancelPlatformBooking('${jsArg(actionRef)}')">Cancel</button>` : ''}
       ${canArchive ? `<button class="btn btn-d btn-sm" onclick="archiveBooking('${jsArg(actionRef)}')">Archive</button>` : ''}`;
   }
   const forfeited = b.status === 'forfeited' || b.paymentStatus === 'deposit_retained';
   const hasBalance = b.hostBooking && b.paymentStatus === 'downpayment_paid';
   return `${bookingDetailsButton(b)}
-    ${bookingCanReschedule(b)?`<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#5a9ad4;border:1px solid rgba(74,154,220,.3)" onclick="openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>`:''}
+    ${canRescheduleBooking(b)?`<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#5a9ad4;border:1px solid rgba(74,154,220,.3)" onclick="openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>`:''}
     ${b.email && (forfeited || hasBalance)?`<button class="btn btn-sm" style="background:rgba(var(--green-rgb),.12);color:var(--green);border:1px solid rgba(var(--green-rgb),.3)" onclick="resendHostBalanceNotice('${jsArg(actionRef)}')">${forfeited?'Resend Notice':'Balance Reminder'}</button>`:''}
     ${b.status==='confirmed' && b.email && !hasBalance?`<button class="btn btn-sm" style="background:rgba(var(--green-rgb),.12);color:var(--green);border:1px solid rgba(var(--green-rgb),.3)" onclick="resendConfirmationEmail('${jsArg(actionRef)}')">Resend Email</button>`:''}
     <select class="fi" style="padding:4px 7px;font-size:.76rem;width:auto" ${forfeited?'disabled title="Forfeited records are permanent"':''} onchange="updateStatus('${jsArg(actionRef)}',this.value)">
@@ -3714,13 +3727,28 @@ function mobileBookingCard(b, canDelete){
     </details>
   </div>`;
 }
-function closeBookingDetails() {
+let _bookingDetailsLastFocus = null;
+function focusIfVisible(element) {
+  if (!element || !document.contains(element) || typeof element.focus !== 'function') return;
+  if (element.closest?.('[hidden], [inert]')) return;
+  element.focus();
+}
+function closeBookingDetails({ restoreFocus = true } = {}) {
   const modal = $('bookingDetailsModal');
   if (!modal) return;
   modal.classList.remove('show');
   modal.setAttribute('aria-hidden','true');
   modal.inert = true;
   modal.hidden = true;
+  const previous = _bookingDetailsLastFocus;
+  _bookingDetailsLastFocus = null;
+  if (restoreFocus) requestAnimationFrame(() => focusIfVisible(previous));
+}
+async function openRescheduleFromBookingDetails(ref) {
+  const returnFocus = _bookingDetailsLastFocus;
+  closeBookingDetails({ restoreFocus:false });
+  const opened = await openRescheduleModal(ref, { returnFocus });
+  if (!opened) requestAnimationFrame(() => focusIfVisible(returnFocus));
 }
 function bookingSlotLabel(b) {
   if (b.status === 'forfeited' || b.status === 'cancelled') return 'Released';
@@ -3730,10 +3758,79 @@ function bookingSlotLabel(b) {
 function balanceNotificationLabel(value) {
   return ({ reminder_3d:'3-day reminder', reminder_2d:'2-day reminder', reminder_1d:'Final reminder', forfeited:'Forfeiture notice', manual:'Manual notice' })[value] || value;
 }
+function rescheduleDateTimeLabel(startsAt, endsAt) {
+  const start = new Date(startsAt || '');
+  const end = new Date(endsAt || '');
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return '--';
+  const date = new Intl.DateTimeFormat('en-PH', {
+    timeZone:'Asia/Manila', weekday:'short', month:'short', day:'numeric', year:'numeric'
+  }).format(start);
+  const time = value => new Intl.DateTimeFormat('en-PH', {
+    timeZone:'Asia/Manila', hour:'numeric', minute:'2-digit', hour12:true
+  }).format(value);
+  return `${date} · ${time(start)}-${time(end)}`;
+}
+function rescheduleEmailStatusLabel(event) {
+  const status = String(event?.emailStatus || '').toLowerCase();
+  if (status === 'sent') return `Email sent${event.emailSentAt ? ` · ${window.BookingBalance.formatDeadline(event.emailSentAt)}` : ''}`;
+  if (status === 'failed') return `Email failed${event.emailErrorCode ? ` · ${event.emailErrorCode}` : ''}`;
+  if (status === 'disabled') return 'Email service disabled';
+  if (status === 'not_requested') return 'Customer email not requested';
+  if (status === 'sending') return 'Email delivery in progress';
+  if (status === 'pending') return 'Email pending · retry available';
+  if (status === 'delivery_unknown') return 'Email delivery outcome needs review';
+  if (status === 'skipped_no_email') return 'Skipped · no customer email';
+  if (event?.notifyCustomer) return 'Email delivery pending';
+  return 'Customer email not requested';
+}
+function canResendRescheduleEmailForBooking(b) {
+  if (!b || b.archivedAt) return false;
+  if (!['owner','court_owner'].includes(String(sess?.role || '').toLowerCase())) return false;
+  return ['pending_payment','payment_review','confirmed'].includes(
+    String(b.platformStatus || '').toLowerCase()
+  );
+}
+function bookingRescheduleHistoryHtml(b) {
+  const events = Array.isArray(b?.rescheduleEvents) ? b.rescheduleEvents : [];
+  if (!events.length) return '';
+  const actionRef = b.primaryRef || b.ref;
+  const lastRescheduleEventId = String(b.lastRescheduleEventId || '');
+  return `<div class="booking-detail-section"><h3>Reschedule history</h3><div class="reschedule-history">${events.map((event,index) => {
+    const isLatest = lastRescheduleEventId
+      ? String(event.id || '') === lastRescheduleEventId
+      : index === 0;
+    const rawActor = String(event.rescheduledBy || '');
+    const actor = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawActor)
+      ? 'Dashboard operator'
+      : rawActor || 'Dashboard operator';
+    const when = event.rescheduledAt ? window.BookingBalance.formatDeadline(event.rescheduledAt) : '--';
+    const emailStatus = String(event.emailStatus || '').toLowerCase();
+    const canResend = !!(isLatest &&
+      canResendRescheduleEmailForBooking(b) &&
+      b.email &&
+      event.id &&
+      ['sent','failed','disabled','not_requested','pending'].includes(emailStatus));
+    const emailActionLabel = ['failed','pending'].includes(emailStatus) ? 'Retry Email' : 'Resend Email';
+    return `<article class="reschedule-history-item">
+      <div class="reschedule-history-heading">
+        <div class="reschedule-history-route">${esc(rescheduleDateTimeLabel(event.oldStartsAt,event.oldEndsAt))} → ${esc(rescheduleDateTimeLabel(event.newStartsAt,event.newEndsAt))}</div>
+        <span class="reschedule-history-state ${isLatest?'':'superseded'}">${isLatest?'Latest':'Superseded'}</span>
+      </div>
+      <div class="reschedule-history-meta">${esc(actor)} · ${esc(when)} · ${esc(String(event.reasonCode || 'reason').replaceAll('_',' '))}</div>
+      <div class="reschedule-history-note">${esc(event.publicReason || 'No customer-facing reason recorded.')}</div>
+      ${event.internalNote ? `<div class="reschedule-history-note"><strong>Internal:</strong> ${esc(event.internalNote)}</div>` : ''}
+      <div class="reschedule-history-email"><span>${isLatest ? esc(rescheduleEmailStatusLabel(event)) : `Superseded · ${esc(rescheduleEmailStatusLabel(event))}`}</span>${canResend ? `<button class="btn btn-g btn-sm" type="button" onclick="resendRescheduleEmail('${jsArg(actionRef)}','${jsArg(event.id)}',this)">${emailActionLabel}</button>` : ''}</div>
+    </article>`;
+  }).join('')}</div></div>`;
+}
 async function openBookingDetails(ref) {
   const modal = $('bookingDetailsModal');
   const body = $('bookingDetailsBody');
   if (!modal || !body) return;
+  if (!modal.classList.contains('show')) {
+    const active = document.activeElement;
+    if (active && !modal.contains(active)) _bookingDetailsLastFocus = active;
+  }
   modal.hidden = false; modal.inert = false; modal.setAttribute('aria-hidden','false'); modal.classList.add('show');
   body.innerHTML = '<div class="booking-details-loading">Loading booking details...</div>';
   try {
@@ -3776,18 +3873,36 @@ async function openBookingDetails(ref) {
         <div class="booking-detail-row"><span>Payment state</span><strong>${esc(payStatusText(b.paymentStatus))}</strong></div>
         <div class="booking-detail-row"><span>Policy</span><strong>Final and non-refundable</strong></div>
       </div>
+      ${bookingRescheduleHistoryHtml(b)}
       ${b.hostBooking ? `<div class="booking-detail-section"><h3>Email history</h3><div class="booking-notice-list">${notices}</div></div>` : ''}`;
     const actionRef = b.primaryRef || b.ref;
     const hasReceipt = (b.gcashRef || (b.receiptStatus && b.receiptStatus !== 'none')) && isDigitalPayment(b.paymentMethod);
     $('bookingDetailsActions').innerHTML = `
       <button class="btn btn-g" onclick="closeBookingDetails()">Close</button>
       ${hasReceipt ? `<button class="btn btn-g" onclick="closeBookingDetails();openVerifyModal('${jsArg(actionRef)}')">View Payment</button>` : ''}
-      ${bookingCanReschedule(b) ? `<button class="btn btn-p" onclick="closeBookingDetails();openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>` : ''}
+      ${canRescheduleBooking(b) ? `<button class="btn btn-p" onclick="openRescheduleFromBookingDetails('${jsArg(actionRef)}')">Reschedule</button>` : ''}
       ${bookingCanCancel(b) ? `<button class="btn btn-d" onclick="closeBookingDetails();cancelPlatformBooking('${jsArg(actionRef)}')">Cancel booking</button>` : ''}
       ${b.hostBooking && b.email && (forfeited || historicalBalance > 0) ? `<button class="btn btn-p" onclick="resendHostBalanceNotice('${jsArg(actionRef)}')">${forfeited?'Resend Forfeiture Notice':'Send Balance Reminder'}</button>` : ''}`;
     requestAnimationFrame(() => modal.querySelector('.booking-details-modal')?.focus());
   } catch (error) {
     body.innerHTML = `<div class="booking-details-loading">${esc(error?.message || 'Could not load booking details.')}</div>`;
+  }
+}
+async function resendRescheduleEmail(ref, eventId, button = null) {
+  if (!ref || !eventId || typeof DB.resendBookingRescheduleEmail !== 'function') return;
+  const original = button?.textContent || 'Resend Email';
+  if (button) { button.disabled = true; button.textContent = 'Sending...'; }
+  try {
+    const result = await DB.resendBookingRescheduleEmail(ref, eventId);
+    const status = String(result?.email?.status || '');
+    if (status === 'sent') toast('Reschedule email sent to the customer.');
+    else if (status === 'disabled') toast('Email is still disabled for this venue.', 'inf');
+    else if (status === 'skipped_no_email') toast('No customer email is available.', 'inf');
+    else toast(`Email was not sent${result?.email?.errorCode ? `: ${result.email.errorCode}` : '.'}`, 'err');
+    await openBookingDetails(ref);
+  } catch (error) {
+    toast(error?.message || 'Could not resend the reschedule email.', 'err');
+    if (button) { button.disabled = false; button.textContent = original; }
   }
 }
 async function resendHostBalanceNotice(ref) {
@@ -4242,19 +4357,7 @@ async function renderBookings(){
         ${receiptBadge(b)}
       </div></td>
       <td data-label="Status">${statusBdg(b.status)}</td>
-      <td data-label="Actions"><div style="display:flex;gap:5px;flex-wrap:wrap">${bookingActionsHtml(b, canDelete)}</div><div style="display:none">
-        ${(b.gcashRef || (b.receiptStatus && b.receiptStatus!=='none')) && isDigitalPayment(b.paymentMethod)?`<button class="btn btn-sm" style="background:rgba(200,160,96,.15);color:var(--yellow);border:1px solid rgba(200,160,96,.35);font-weight:700" onclick="openVerifyModal('${jsArg(b.ref)}')">🔍 ${b.status==='pending'?'Verify':'Details'}</button>`:''}
-        ${b.status!=='cancelled'?`<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#5a9ad4;border:1px solid rgba(74,154,220,.3)" onclick="openRescheduleModal('${jsArg(b.ref)}')">📅 Reschedule</button>`:''}
-        ${b.status==='confirmed' && b.email?`<button class="btn btn-sm" style="background:rgba(var(--green-rgb),.12);color:var(--green);border:1px solid rgba(var(--green-rgb),.3)" onclick="resendConfirmationEmail('${jsArg(b.ref)}')">📧 Resend Email</button>`:''}
-        <select class="fi" style="padding:4px 7px;font-size:.76rem;width:auto" onchange="updateStatus('${jsArg(b.ref)}',this.value)">
-          <option value="pending" ${b.status==='pending'?'selected':''}>Pending</option>
-          <option value="confirmed" ${b.status==='confirmed'?'selected':''}>Confirmed</option>
-          <option value="verifying" ${b.status==='verifying'?'selected':''}>Processing</option>
-          <option value="completed" ${b.status==='completed'?'selected':''}>Completed</option>
-          <option value="cancelled" ${b.status==='cancelled'?'selected':''}>Cancelled</option>
-        </select>
-        ${canDelete?`<button class="btn btn-d btn-sm" onclick="delBooking('${jsArg(b.ref)}')">🗑️</button>`:''}
-      </div></td>
+      <td data-label="Actions"><div style="display:flex;gap:5px;flex-wrap:wrap">${bookingActionsHtml(b, canDelete)}</div></td>
     </tr>`).join('');
   const noCopy = bookingFiltersActive({ q, fd, fs, fp }) ? 'No bookings match these filters.' : 'No bookings yet.';
   const noResults = !mtRowsHtml && !bkRowsHtml ? `<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:28px">${noCopy}</td></tr>` : '';
@@ -5915,255 +6018,354 @@ function fmtHour(h) {
   return `${hh}:00 ${suffix}`;
 }
 
-const RS_REASON_MESSAGES = {
-  customer_request: 'As requested, we moved your booking to the new schedule.',
-  weather: 'Due to unsafe weather conditions, we moved your booking for everyone\'s safety.',
-  maintenance: 'The court needs maintenance at the original time, so we moved your booking to keep your slot secure.',
-  schedule_conflict: 'A court schedule conflict came up, so we moved your booking to the new time.',
-  other: '',
+let _rescheduleState = {
+  booking: null,
+  options: [],
+  policies: {},
+  selectedIndex: -1,
+  previewSeq: 0,
+  saving: false,
+  notificationInitialized: false,
+  idempotencyKey: '',
+  lastFocus: null,
 };
-let _rsLastFocus = null;
 
-function rsDateString(date) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(date).reduce((out, part) => ({ ...out, [part.type]: part.value }), {});
-  return `${parts.year}-${parts.month}-${parts.day}`;
+function rescheduleIdempotencyKey() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
+  else for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map(value => value.toString(16).padStart(2,'0'));
+  return `${hex.slice(0,4).join('')}-${hex.slice(4,6).join('')}-${hex.slice(6,8).join('')}-${hex.slice(8,10).join('')}-${hex.slice(10).join('')}`;
 }
 
-function rsUseDateOffset(days) {
-  const base = new Date(`${rsDateString(new Date())}T12:00:00+08:00`);
-  base.setUTCDate(base.getUTCDate() + Number(days || 0));
-  $('rsNewDate').value = rsDateString(base);
-  refreshRsAvailability();
+function rescheduleClockLabel(value) {
+  const text = String(value || '').trim();
+  const match = /^(\d{1,2}):(\d{2})/.exec(text);
+  if (!match) return text || '--';
+  const hour = Number(match[1]);
+  const minute = match[2];
+  const suffix = hour < 12 ? 'AM' : 'PM';
+  return `${hour % 12 || 12}:${minute} ${suffix}`;
 }
 
-function populateRsTimePicker(selectedHour, openHour = 6, closeHour = 22, duration = 1, unavailableStarts = new Set()) {
-  const sel = $('rsStartTime');
-  sel.innerHTML = '';
-  const first = Math.max(0, Number(openHour) || 6);
-  const last = Math.min(23, Math.max(first, Number(closeHour || 22) - Number(duration || 1)));
-  for (let h = first; h <= last; h++) {
-    const opt = document.createElement('option');
-    opt.value = h;
-    opt.disabled = unavailableStarts.has(h);
-    opt.textContent = `${fmtHour(h)}${opt.disabled ? ' — Unavailable' : ''}`;
-    if (h === selectedHour && !opt.disabled) opt.selected = true;
-    sel.appendChild(opt);
+function rescheduleOptionStartTime(option) {
+  const direct = String(option?.startTime || '').trim();
+  if (/^\d{2}:\d{2}$/.test(direct)) return direct;
+  const fromTimestamp = String(option?.startsAt || '').slice(11,16);
+  return /^\d{2}:\d{2}$/.test(fromTimestamp) ? fromTimestamp : '';
+}
+
+function rescheduleSelectedOption() {
+  return _rescheduleState.options[_rescheduleState.selectedIndex] || null;
+}
+
+function setRescheduleError(message = '') {
+  const box = $('rsError');
+  if (!box) return;
+  box.hidden = !message;
+  box.textContent = message;
+}
+
+function updateRescheduleSaveState() {
+  const button = $('rsSaveBtn');
+  if (!button) return;
+  const selected = rescheduleSelectedOption();
+  const ready = !!selected &&
+    selected.available !== false &&
+    !!$('rsReasonCode')?.value &&
+    $('rsPublicReason')?.value.trim().length >= 3;
+  button.disabled = _rescheduleState.saving || !ready;
+}
+
+function updateRescheduleSummary() {
+  const summary = $('rsSummary');
+  const booking = _rescheduleState.booking;
+  const option = rescheduleSelectedOption();
+  if (!summary || !booking || !option) {
+    if (summary) summary.hidden = true;
+    updateRescheduleSaveState();
+    return;
   }
-  const available = [...sel.options].filter(option => !option.disabled);
-  if (![...sel.options].some(option => option.selected && !option.disabled)) {
-    if (available[0]) available[0].selected = true;
-    else {
-      sel.innerHTML = '<option value="" disabled selected>No available start times</option>';
-    }
-  }
-  updateRsEndTime();
+  $('rsSummaryBefore').textContent = `${fmtD(booking.date)} · ${booking.startTime}-${booking.endTime}`;
+  $('rsSummaryAfter').textContent = `${fmtD($('rsNewDate').value)} · ${rescheduleClockLabel(option.startTime)}-${rescheduleClockLabel(option.endTime)}`;
+  summary.hidden = false;
+  updateRescheduleSaveState();
 }
 
-async function refreshRsAvailability(preferredHour = null) {
-  const modal = $('rescheduleModal');
+function rescheduleUnavailableReasonLabel(reason) {
+  const code = String(reason || 'unavailable').trim().toLowerCase();
+  const labels = {
+    lead_time: 'Too soon to reschedule',
+    current_schedule: 'Current booking time',
+    booked: 'Already booked',
+    blocked: 'Blocked by venue',
+    past: 'Time has passed',
+    unavailable: 'Unavailable',
+  };
+  return labels[code] || code.replaceAll('_',' ').replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+function renderRescheduleOptions() {
+  const target = $('rsOptions');
+  if (!target) return;
+  const options = _rescheduleState.options;
+  const availableCount = options.filter(option => option.available !== false).length;
+  if (!options.length || !availableCount) {
+    target.innerHTML = '<div class="reschedule-options-state">No available times were returned for this date. Choose another date.</div>';
+    updateRescheduleSummary();
+    return;
+  }
+  target.innerHTML = options.map((option,index) => {
+    const available = option.available !== false;
+    const selected = index === _rescheduleState.selectedIndex;
+    const time = option.startTime && option.endTime
+      ? `${rescheduleClockLabel(option.startTime)} - ${rescheduleClockLabel(option.endTime)}`
+      : option.label || 'Available time';
+    const state = available
+      ? (selected ? 'Selected' : 'Available')
+      : rescheduleUnavailableReasonLabel(option.unavailableReason);
+    return `<button type="button" class="reschedule-option ${selected?'selected':''}" data-reschedule-index="${index}" ${available?'':'disabled'} aria-pressed="${selected}" onclick="selectRescheduleOption(${index})"><strong>${esc(time)}</strong><span>${esc(state)}</span></button>`;
+  }).join('');
+  updateRescheduleSummary();
+}
+
+function applyReschedulePolicies(policies = {}, booking = null) {
+  _rescheduleState.policies = policies && typeof policies === 'object' ? policies : {};
+  const currentReason = $('rsReasonCode')?.value || '';
+  const reasonCodes = Array.isArray(_rescheduleState.policies.reasonCodes)
+    ? _rescheduleState.policies.reasonCodes
+    : [];
+  $('rsReasonCode').innerHTML = '<option value="">Select a reason</option>' +
+    reasonCodes.map(reason => `<option value="${esc(reason.value)}">${esc(reason.label || reason.value)}</option>`).join('');
+  if (reasonCodes.some(reason => String(reason.value) === currentReason)) $('rsReasonCode').value = currentReason;
+
+  const notify = $('rsNotifyCustomer');
+  const hasEmail = !!booking?.email;
+  const notificationAvailable = _rescheduleState.policies.notificationAvailable !== false && hasEmail;
+  notify.disabled = !notificationAvailable;
+  if (!_rescheduleState.notificationInitialized) {
+    notify.checked = notificationAvailable &&
+      (_rescheduleState.policies.notificationDefault !== false);
+    _rescheduleState.notificationInitialized = true;
+  } else if (!notificationAvailable) {
+    notify.checked = false;
+  }
+  $('rsNotifyCopy').textContent = !hasEmail
+    ? 'No customer email is recorded for this booking.'
+    : notificationAvailable
+      ? `The updated schedule and reason will be sent to ${booking.email}.`
+      : 'Customer email is currently unavailable for this booking.';
+  const sameCourt = _rescheduleState.policies.sameCourtOnly !== false;
+  const sameDuration = _rescheduleState.policies.sameDurationOnly !== false;
+  $('rsPolicyCopy').textContent = `${sameCourt?'Same court':'Court changes allowed'} · ${sameDuration?'Same duration':'Duration changes allowed'} · only server-confirmed available times are shown.`;
+}
+
+async function loadRescheduleOptions() {
   const date = $('rsNewDate')?.value;
-  const courtId = modal?.dataset.courtId;
-  const ref = modal?.dataset.ref;
-  const duration = Number($('rsDuration')?.value || 1);
-  if (!date || !courtId) { updateRsSummary(); return; }
-  const select = $('rsStartTime');
-  select.disabled = true;
+  const ref = _rescheduleState.booking?.ref;
+  if (!date || !ref) return;
+  const seq = ++_rescheduleState.previewSeq;
+  _rescheduleState.options = [];
+  _rescheduleState.selectedIndex = -1;
+  $('rsOptions').innerHTML = '<div class="reschedule-options-state">Checking live availability...</div>';
+  $('rsSummary').hidden = true;
+  setRescheduleError('');
+  updateRescheduleSaveState();
   try {
-    const rows = await DB.getBookings({ date });
-    const occupied = new Set();
-    (rows || []).filter(item =>
-      String(item.ref) !== String(ref) &&
-      String(item.courtId) === String(courtId) &&
-      !['cancelled','forfeited','completed','expired'].includes(String(item.status || '').toLowerCase())
-    ).forEach(item => (item.slots || []).forEach(hour => occupied.add(Number(hour))));
-    const unavailable = new Set();
-    const openHour = Number(modal.dataset.openHour || 6);
-    const closeHour = Number(modal.dataset.closeHour || 22);
-    const now = new Date();
-    const currentHour = Number(new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Manila', hour: '2-digit', hourCycle: 'h23',
-    }).format(now));
-    for (let start = openHour; start <= closeHour - duration; start++) {
-      const isPast = date === rsDateString(now) && start <= currentHour;
-      if (isPast || Array.from({ length: duration }, (_, index) => start + index).some(hour => occupied.has(hour))) unavailable.add(start);
+    const preview = await DB.previewBookingReschedule(ref, date);
+    if (seq !== _rescheduleState.previewSeq) return;
+    if (preview.booking) {
+      _rescheduleState.booking = preview.booking;
+      $('rsName').textContent = preview.booking.fullName || 'Guest';
+      $('rsOldCourt').textContent = preview.booking.courtName || 'Court';
+      $('rsOldDate').textContent = fmtD(preview.booking.date);
+      $('rsOldTime').textContent = `${preview.booking.startTime} - ${preview.booking.endTime}`;
     }
-    const selected = preferredHour !== null && Number.isInteger(Number(preferredHour)) ? Number(preferredHour) : Number(select.value);
-    populateRsTimePicker(selected, openHour, closeHour, duration, unavailable);
-  } catch (_) {
-    populateRsTimePicker(Number(preferredHour ?? select.value), Number(modal.dataset.openHour || 6), Number(modal.dataset.closeHour || 22), duration);
-  } finally {
-    select.disabled = false;
-    updateRsSummary();
+    _rescheduleState.options = Array.isArray(preview.options) ? preview.options : [];
+    applyReschedulePolicies(preview.policies, _rescheduleState.booking);
+    renderRescheduleOptions();
+  } catch (error) {
+    if (seq !== _rescheduleState.previewSeq) return;
+    $('rsOptions').innerHTML = '<div class="reschedule-options-state">Available times could not be loaded.</div>';
+    setRescheduleError(error?.message || 'Available reschedule times could not be loaded.');
   }
 }
 
-function updateRsEndTime() {
-  updateRsSummary();
+function selectRescheduleOption(index) {
+  const option = _rescheduleState.options[index];
+  if (!option || option.available === false || _rescheduleState.saving) return;
+  _rescheduleState.selectedIndex = index;
+  setRescheduleError('');
+  renderRescheduleOptions();
+  requestAnimationFrame(() => $('rsOptions')?.querySelector(`[data-reschedule-index="${index}"]`)?.focus());
 }
 
-function updateRsSummary() {
-  const date = $('rsNewDate')?.value;
-  const start = parseInt($('rsStartTime')?.value);
-  const dur = parseInt($('rsDuration')?.value);
-  const summary = $('rsNewSummary');
-  if (!summary) return;
-  summary.textContent = date && Number.isInteger(start) && Number.isInteger(dur)
-    ? `${fmtD(date)} · ${fmtHour(start)} – ${fmtHour(start + dur)}`
-    : 'Select a date and start time';
-}
-
-function updateRsNoteCount() {
-  $('rsNoteCount').textContent = String($('rsNote')?.value?.length || 0);
-}
-
-function selectRsReason(reason, button) {
+async function openRescheduleModal(ref, { returnFocus = null } = {}) {
+  if (!window.PB_PLATFORM_V1 || typeof DB.previewBookingReschedule !== 'function') {
+    toast('Protected rescheduling is not available.', 'err');
+    return false;
+  }
+  let group;
+  try {
+    group = await getBookingGroupByRef(ref);
+  } catch (error) {
+    toast(error?.message || 'The booking could not be loaded.', 'err');
+    return false;
+  }
+  if (!group || !canRescheduleBooking(group)) {
+    toast('This booking is no longer eligible for rescheduling.', 'err');
+    return false;
+  }
   const modal = $('rescheduleModal');
-  modal.dataset.reason = reason;
-  modal.querySelectorAll('.rs-reason-chip').forEach(chip => {
-    const active = chip === button;
-    chip.classList.toggle('active', active);
-    chip.setAttribute('aria-pressed', active ? 'true' : 'false');
-  });
-  $('rsNote').value = RS_REASON_MESSAGES[reason] || '';
-  updateRsNoteCount();
-  if (reason === 'other') $('rsNote').focus();
+  _rescheduleState = {
+    booking: group,
+    options: [],
+    policies: {},
+    selectedIndex: -1,
+    previewSeq: _rescheduleState.previewSeq + 1,
+    saving: false,
+    notificationInitialized: false,
+    idempotencyKey: rescheduleIdempotencyKey(),
+    lastFocus: returnFocus || document.activeElement,
+  };
+  const today = phDateKeyFromTimestamp(new Date());
+  const initialDate = String(group.date || '') >= today ? group.date : today;
+  $('rsName').textContent = group.fullName || 'Guest';
+  $('rsOldCourt').textContent = group.courtName || 'Court';
+  $('rsOldDate').textContent = fmtD(group.date);
+  $('rsOldTime').textContent = `${group.startTime} - ${group.endTime}`;
+  $('rsNewDate').min = today;
+  $('rsNewDate').value = initialDate;
+  $('rsReasonCode').innerHTML = '<option value="">Select a reason</option>';
+  $('rsPublicReason').value = '';
+  $('rsInternalNote').value = '';
+  $('rsNotifyCustomer').checked = !!group.email;
+  $('rsNotifyCustomer').disabled = !group.email;
+  $('rsOptions').innerHTML = '<div class="reschedule-options-state">Checking live availability...</div>';
+  $('rsSummary').hidden = true;
+  $('rsSaveBtn').disabled = true;
+  $('rsSaveBtn').textContent = 'Confirm Reschedule';
+  setRescheduleError('');
+  modal.hidden = false;
+  modal.inert = false;
+  modal.setAttribute('aria-hidden','false');
+  modal.classList.add('show');
+  requestAnimationFrame(() => modal.querySelector('.reschedule-modal')?.focus());
+  await loadRescheduleOptions();
+  return true;
 }
 
-function closeRescheduleModal() {
+function closeRescheduleModal({ restoreFocus = true } = {}) {
+  if (_rescheduleState.saving) return;
   const modal = $('rescheduleModal');
   if (!modal) return;
   modal.classList.remove('show');
   modal.setAttribute('aria-hidden','true');
   modal.inert = true;
-  if (_rsLastFocus && document.contains(_rsLastFocus)) _rsLastFocus.focus();
-  _rsLastFocus = null;
+  modal.hidden = true;
+  _rescheduleState.previewSeq += 1;
+  if (!restoreFocus) return;
+  const previous = _rescheduleState.lastFocus;
+  requestAnimationFrame(() => focusIfVisible(previous));
 }
 
-async function openRescheduleModal(ref) {
-  const group = await getBookingGroupByRef(ref);
-  if (group?.isGroup) { toast('Grouped bookings must be rescheduled court-by-court from individual booking records.', 'inf'); return; }
-  const b = await DB.getBookingByRef(ref);
-  if (!b) { toast('Booking not found.', 'err'); return; }
-  if (!bookingCanReschedule(b)) { toast('This booking can no longer be rescheduled.', 'err'); return; }
-
-  $('rsOldCourt').textContent = b.courtName;
-  $('rsOldDate').textContent = fmtD(b.date);
-  $('rsOldTime').textContent = `${b.startTime} – ${b.endTime}`;
-  $('rsName').textContent = b.email ? `${b.fullName} · ${b.email}` : b.fullName;
-
-  const today = rsDateString(new Date());
-  $('rsNewDate').min = today;
-
-  const startH = b.slots?.length ? Math.min(...b.slots) : 8;
-  const dur = Math.max(1, Number(b.duration || b.slots?.length || 1));
-  $('rsDuration').value = dur;
-  $('rsDurationDisplay').textContent = `${dur} hour${dur === 1 ? '' : 's'}`;
-  let openHour = 6;
-  let closeHour = 22;
-  try {
-    const court = (await DB.getCourts()).find(item => String(item.id) === String(b.courtId));
-    openHour = parseInt(String(court?.opensAt || '06:00').slice(0,2), 10);
-    closeHour = String(court?.closesAt || '').startsWith('00:00') ? 24 : parseInt(String(court?.closesAt || '22:00').slice(0,2), 10);
-  } catch (_) {}
-  populateRsTimePicker(startH, openHour, closeHour, dur);
-
-  $('rsNote').value = '';
-  $('rsNotifyHint').textContent = window.PB_PLATFORM_V1
-    ? 'The reason is saved in the booking audit history.'
-    : b.email ? `This message will be emailed to ${b.email}.` : 'No customer email is saved; the reason is kept with the update.';
-  updateRsNoteCount();
-
+function rescheduleModalKeydown(event) {
   const modal = $('rescheduleModal');
-  modal.dataset.ref = ref;
-  modal.dataset.oldDate = b.date;
-  modal.dataset.oldStart = b.startTime;
-  modal.dataset.oldEnd = b.endTime;
-  modal.dataset.courtId = b.courtId;
-  modal.dataset.openHour = openHour;
-  modal.dataset.closeHour = closeHour;
-  modal.dataset.reason = '';
-  modal.querySelectorAll('.rs-reason-chip').forEach(chip => { chip.classList.remove('active'); chip.setAttribute('aria-pressed','false'); });
-  _rsLastFocus = document.activeElement;
-  modal.inert = false;
-  modal.setAttribute('aria-hidden','false');
-  modal.classList.add('show');
-  requestAnimationFrame(() => modal.querySelector('.rs-modal')?.focus());
-  rsUseDateOffset(1);
-}
-
-function rsStartHour(value) {
-  const match = String(value || '').match(/^(\d{1,2})/);
-  if (!match) return -1;
-  let hour = Number(match[1]);
-  if (/PM/i.test(value) && hour !== 12) hour += 12;
-  if (/AM/i.test(value) && hour === 12) hour = 0;
-  return hour;
+  if (!modal?.classList.contains('show')) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeRescheduleModal();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const focusable = [...modal.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[href],[tabindex]:not([tabindex="-1"])')]
+    .filter(element => element.offsetParent !== null);
+  if (!focusable.length) return;
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
 }
 
 async function saveReschedule() {
-  const modal = $('rescheduleModal');
-  const ref = modal.dataset.ref;
-  if (!ref) return;
+  if (_rescheduleState.saving) return;
+  const booking = _rescheduleState.booking;
+  const option = rescheduleSelectedOption();
+  const newDate = $('rsNewDate')?.value || '';
+  const newStartTime = rescheduleOptionStartTime(option);
+  const reasonCode = $('rsReasonCode')?.value || '';
+  const publicReason = $('rsPublicReason')?.value.trim() || '';
+  const internalNote = $('rsInternalNote')?.value.trim() || '';
+  const notifyCustomer = $('rsNotifyCustomer')?.checked === true && !$('rsNotifyCustomer')?.disabled;
+  if (!booking || !option || option.available === false) {
+    setRescheduleError('Choose an available new time.');
+    return;
+  }
+  if (!newDate || !newStartTime) {
+    setRescheduleError('Choose a valid new date and time.');
+    return;
+  }
+  if (!reasonCode) {
+    setRescheduleError('Choose a reason category.');
+    $('rsReasonCode')?.focus();
+    return;
+  }
+  if (publicReason.length < 3) {
+    setRescheduleError('Enter a clear customer-facing reason.');
+    $('rsPublicReason')?.focus();
+    return;
+  }
+  if (internalNote && internalNote.length < 3) {
+    setRescheduleError('Internal notes must contain at least 3 characters or be left blank.');
+    $('rsInternalNote')?.focus();
+    return;
+  }
 
-  const oldDate = modal.dataset.oldDate;
-  const oldStartTime = modal.dataset.oldStart;
-  const oldEndTime = modal.dataset.oldEnd;
-  const reason = modal.dataset.reason;
-  const newDate = $('rsNewDate').value;
-  const startH = parseInt($('rsStartTime').value);
-  const dur = parseInt($('rsDuration').value);
-  const endH = startH + dur;
-  const note = $('rsNote').value.trim();
-
-  if (!newDate) { toast('Please select a new date.', 'err'); return; }
-  if (isNaN(startH) || isNaN(dur)) { toast('Please select a start time.', 'err'); return; }
-  if (!reason) { toast('Choose a reason for the reschedule.', 'err'); return; }
-  if (note.length < 3) { toast('Add a short reason of at least 3 characters.', 'err'); $('rsNote').focus(); return; }
-  if (newDate === oldDate && startH === rsStartHour(oldStartTime)) { toast('Choose a different date or start time.', 'err'); return; }
-
-  const slots = Array.from({ length: dur }, (_, i) => startH + i);
-  const newStartTime = fmtHour(startH);
-  const newEndTime = fmtHour(endH);
-  const saveBtn = $('rsSaveBtn');
-  saveBtn.disabled = true;
-  saveBtn.textContent = 'Rescheduling…';
-
+  _rescheduleState.saving = true;
+  const button = $('rsSaveBtn');
+  button.disabled = true;
+  button.textContent = 'Rescheduling...';
+  setRescheduleError('');
   try {
-    if (typeof DB.rescheduleBooking === 'function') {
-      await DB.rescheduleBooking(ref, { date: newDate, startHour: startH, duration: dur, reason: note });
+    const result = await DB.rescheduleBooking(booking.ref, {
+      newDate,
+      newStartTime,
+      reasonCode,
+      publicReason,
+      internalNote,
+      notifyCustomer,
+      idempotencyKey: _rescheduleState.idempotencyKey,
+    });
+    _rescheduleState.saving = false;
+    closeRescheduleModal({ restoreFocus:false });
+    await Promise.all([renderBookings(),renderDash()]);
+    requestAnimationFrame(() => {
+      const search = $('srch');
+      if (search && search.offsetParent !== null) search.focus();
+    });
+    if (result?.email?.status === 'sent') {
+      toast('Booking rescheduled and customer email sent.');
+    } else if (!notifyCustomer) {
+      toast('Booking rescheduled. Customer email was not requested.');
+    } else if (result?.email?.status === 'skipped_no_email') {
+      toast('Booking rescheduled. No customer email is on file.', 'inf');
+    } else if (result?.email?.status === 'disabled') {
+      toast('Booking rescheduled. Customer email is currently disabled.', 'inf');
     } else {
-      await DB.updateBooking(ref, { date: newDate, startTime: newStartTime, endTime: newEndTime, duration: dur, slots });
+      toast(`Booking rescheduled, but email failed${result?.email?.errorCode ? `: ${result.email.errorCode}` : '.'}`, 'err');
     }
-
-    closeRescheduleModal();
-    toast(`Booking moved to ${fmtD(newDate)}, ${newStartTime}.`);
-    await renderBookings();
-    renderDash();
-
-    DB.getBookingByRef(ref).then(async bk => {
-      if (!bk) return;
-      const payload = {
-        bookingRef: bk.ref, email: bk.email, fullName: bk.fullName, courtName: bk.courtName,
-        oldDate, oldStartTime, oldEndTime, newDate, newStartTime, newEndTime,
-        newDuration: dur, note,
-      };
-      await Promise.all([
-        bk.email ? DB.sendRescheduleEmail(payload, { allowFailure: true }).then(j => {
-          if (j?.ok) toast('Reschedule email sent to customer!');
-          else if (!j?.skipped) toast(`Booking rescheduled, but email failed: ${j?.error || 'unknown error'}`, 'err');
-        }).catch(() => {}) : Promise.resolve(),
-        notifyBookingUpdateSafe(bk, 'booking_rescheduled', note),
-      ]);
-    }).catch(() => {});
-  } catch(e) {
-    const message = String(e?.message || 'Failed to reschedule booking.');
-    const conflict = e?.code === '23P01' || /overlap|no longer available|already booked|conflict/i.test(message);
-    toast(conflict ? 'That time is no longer available. Please choose another start time.' : message, 'err');
-  } finally {
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Confirm reschedule';
+  } catch (error) {
+    _rescheduleState.saving = false;
+    button.textContent = 'Confirm Reschedule';
+    if (error?.code === 'RESCHEDULE_SLOT_UNAVAILABLE') {
+      await loadRescheduleOptions();
+      setRescheduleError('That time was just taken or blocked. Live availability has been refreshed.');
+    } else {
+      setRescheduleError(error?.message || 'The booking could not be rescheduled. Availability may have changed.');
+    }
+    updateRescheduleSaveState();
   }
 }
 
@@ -8762,6 +8964,6 @@ async function checkAgreementGate(session) {
 
 <script src="supabase.min.js"></script>
 <script src="tenant-config.js?v=20260720-court-status-v4"></script>
-<script src="supabase-config.js?v=20260723-reschedule-v1"></script>
+<script src="supabase-config.js?v=20260723-protected-reschedule-v2"></script>
 </body>
 </html>
