@@ -897,6 +897,49 @@ tr:hover td { background: var(--bg2); }
 .booking-notice-item { display:flex; justify-content:space-between; gap:12px; padding:9px 10px; border-radius:9px; background:var(--bg2); font-size:.75rem; }
 .booking-notice-item strong { color:var(--text); }
 .booking-notice-item span { color:var(--text3); text-align:right; }
+.rs-modal { width:min(520px,calc(100vw - 28px)); max-width:520px; overflow:hidden; }
+.rs-head { align-items:flex-start; background:linear-gradient(135deg,rgba(74,154,220,.14),transparent); }
+.rs-head-copy h2 { color:#5a9ad4; }
+.rs-head-copy p { margin:4px 0 0; color:var(--text3); font-size:.76rem; line-height:1.35; }
+.rs-body { max-height:min(72vh,720px); overflow:auto; padding:18px; background:var(--bg); }
+.rs-current { padding:14px; border:1px solid var(--border); border-radius:14px; background:var(--surface); }
+.rs-kicker { color:var(--text3); font-size:.64rem; font-weight:900; letter-spacing:.7px; text-transform:uppercase; }
+.rs-current-top { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+.rs-current-court { margin-top:5px; color:var(--text); font-size:1rem; font-weight:900; }
+.rs-current-customer { max-width:48%; color:var(--text3); font-size:.76rem; text-align:right; overflow-wrap:anywhere; }
+.rs-current-time { display:flex; align-items:center; gap:8px; margin-top:10px; color:var(--yellow); font-size:.84rem; font-weight:800; }
+.rs-section { margin-top:16px; }
+.rs-section-head { display:flex; justify-content:space-between; gap:12px; align-items:end; margin-bottom:8px; }
+.rs-section-title { color:var(--text); font-size:.82rem; font-weight:900; }
+.rs-section-help { color:var(--text3); font-size:.68rem; text-align:right; }
+.rs-date-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+.rs-date-row .fi { min-height:46px; border-radius:12px; font-weight:800; }
+.rs-date-shortcuts { display:flex; gap:6px; }
+.rs-date-chip,.rs-reason-chip {
+  min-height:42px; padding:8px 11px; border:1px solid var(--border); border-radius:11px;
+  background:var(--surface); color:var(--text2); font:800 .72rem 'DM Sans',sans-serif;
+  cursor:pointer; transition:border-color .18s ease,background .18s ease,color .18s ease,transform .18s ease;
+}
+.rs-date-chip:hover,.rs-reason-chip:hover { border-color:rgba(74,154,220,.55); color:#5a9ad4; }
+.rs-date-chip:active,.rs-reason-chip:active { transform:scale(.98); }
+.rs-time-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; }
+.rs-time-grid .fi { min-height:46px; border-radius:12px; font-weight:800; }
+.rs-duration-card { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:46px; padding:9px 12px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+.rs-duration-card span { color:var(--text3); font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.5px; }
+.rs-duration-card strong { color:var(--text); font-size:.84rem; }
+.rs-new-summary { display:flex; align-items:center; gap:10px; margin-top:10px; padding:11px 12px; border:1px solid rgba(var(--green-rgb),.28); border-radius:12px; background:rgba(var(--green-rgb),.08); }
+.rs-new-icon { display:grid; place-items:center; flex:0 0 34px; width:34px; height:34px; border-radius:10px; background:var(--green); color:#fff; font-size:1rem; font-weight:900; }
+.rs-new-summary span { display:block; color:var(--text3); font-size:.64rem; font-weight:900; letter-spacing:.55px; text-transform:uppercase; }
+.rs-new-summary strong { display:block; margin-top:2px; color:var(--text); font-size:.82rem; line-height:1.35; }
+.rs-reasons { display:flex; flex-wrap:wrap; gap:7px; }
+.rs-reason-chip { min-height:38px; border-radius:999px; padding:7px 12px; }
+.rs-reason-chip.active { border-color:#5a9ad4; background:rgba(74,154,220,.14); color:#5a9ad4; box-shadow:0 0 0 2px rgba(74,154,220,.08); }
+.rs-note { min-height:92px; resize:vertical; border-radius:12px; font-size:.84rem; line-height:1.5; }
+.rs-note-meta { display:flex; justify-content:space-between; gap:8px; margin-top:6px; color:var(--text3); font-size:.66rem; }
+.rs-foot { align-items:center; }
+.rs-foot .btn { min-height:44px; justify-content:center; }
+.rs-submit { flex:1; }
+.rs-submit:disabled { opacity:.6; cursor:wait; transform:none; }
 @media (max-width:700px) {
   .booking-details-body { padding:12px; max-height:72vh; }
   .booking-detail-hero { display:grid; }
@@ -904,6 +947,21 @@ tr:hover td { background: var(--bg2); }
   .booking-detail-grid { grid-template-columns:1fr 1fr; }
   .booking-detail-row { grid-template-columns:1fr; gap:3px; }
   .booking-detail-row strong { text-align:left; }
+}
+@media (max-width:480px) {
+  #rescheduleModal { align-items:flex-end; padding:0; }
+  .rs-modal { width:100%; max-width:none; max-height:94vh; border-radius:22px 22px 0 0; }
+  .rs-modal::before { content:''; display:block; width:42px; height:4px; margin:8px auto -3px; border-radius:999px; background:var(--border); }
+  .rs-head { padding-top:12px; }
+  .rs-body { max-height:calc(94vh - 154px); padding:14px 16px 18px; }
+  .rs-current-top { display:grid; gap:4px; }
+  .rs-current-customer { max-width:none; text-align:left; }
+  .rs-date-row { grid-template-columns:1fr; }
+  .rs-date-shortcuts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .rs-date-chip { padding-inline:6px; }
+  .rs-section { margin-top:14px; }
+  .rs-foot { display:grid; grid-template-columns:.75fr 1.25fr; padding:11px 16px calc(11px + env(safe-area-inset-bottom)); }
+  .rs-foot .btn { width:100%; }
 }
 .mb-book-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .mb-book-ref { font-size: .75rem; color: var(--green); font-family: 'DM Mono', monospace; overflow-wrap: anywhere; }
@@ -2674,56 +2732,66 @@ tr:hover td { background: var(--bg2); }
 </div>
 
 <!-- RESCHEDULE MODAL -->
-<div class="overlay" id="rescheduleModal">
-  <div class="modal" style="max-width:440px">
-    <div class="m-hd" style="background:linear-gradient(135deg,rgba(74,154,220,.1),transparent)">
-      <h2 style="color:#5a9ad4">📅 RESCHEDULE BOOKING</h2>
-      <button class="m-x" onclick="closeModal('rescheduleModal')">✕</button>
+<div class="overlay" id="rescheduleModal" aria-hidden="true" inert>
+  <div class="modal rs-modal" role="dialog" aria-modal="true" aria-labelledby="rescheduleTitle" tabindex="-1">
+    <div class="m-hd rs-head">
+      <div class="rs-head-copy">
+        <h2 id="rescheduleTitle">RESCHEDULE BOOKING</h2>
+        <p>Move the same reservation to a new available time.</p>
+      </div>
+      <button class="m-x" type="button" aria-label="Close reschedule booking" onclick="closeRescheduleModal()">&#10005;</button>
     </div>
-    <div class="m-body">
-      <!-- Current schedule -->
-      <div style="background:rgba(200,160,96,.07);border:1px solid rgba(200,160,96,.25);border-radius:8px;padding:12px 16px;margin-bottom:18px;">
-        <div style="font-size:.67rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:5px;">Current Schedule</div>
-        <div style="font-size:.9rem;font-weight:700;color:var(--text)" id="rsOldCourt">—</div>
-        <div style="font-size:.84rem;color:var(--yellow);margin-top:2px"><span id="rsOldDate">—</span> · <span id="rsOldTime">—</span></div>
-        <div style="font-size:.78rem;color:var(--muted);margin-top:3px;">👤 <span id="rsName">—</span></div>
-      </div>
-
-      <!-- New date -->
-      <div class="fg">
-        <label class="fl">New Date</label>
-        <input type="date" class="fi" id="rsNewDate" />
-      </div>
-
-      <!-- Start time + Duration -->
-      <div class="frow" style="gap:10px;">
-        <div class="fg" style="margin:0;flex:1">
-          <label class="fl">Start Time</label>
-          <select class="fi" id="rsStartTime" onchange="updateRsEndTime()"></select>
+    <div class="m-body rs-body">
+      <div class="rs-current">
+        <div class="rs-current-top">
+          <div><div class="rs-kicker">Current reservation</div><div class="rs-current-court" id="rsOldCourt">—</div></div>
+          <div class="rs-current-customer" id="rsName">—</div>
         </div>
-        <div class="fg" style="margin:0;flex:1">
-          <label class="fl">Duration</label>
-          <select class="fi" id="rsDuration" onchange="updateRsEndTime()">
-            <option value="1">1 hour</option>
-            <option value="2" selected>2 hours</option>
-            <option value="3">3 hours</option>
-            <option value="4">4 hours</option>
-          </select>
+        <div class="rs-current-time"><span id="rsOldDate">—</span><span aria-hidden="true">·</span><span id="rsOldTime">—</span></div>
+      </div>
+
+      <div class="rs-section">
+        <div class="rs-section-head"><label class="rs-section-title" for="rsNewDate">Choose a new date</label><span class="rs-section-help">Future dates only</span></div>
+        <div class="rs-date-row">
+          <input type="date" class="fi" id="rsNewDate" onchange="refreshRsAvailability()" />
+          <div class="rs-date-shortcuts" aria-label="Date shortcuts">
+            <button type="button" class="rs-date-chip" onclick="rsUseDateOffset(0)">Today</button>
+            <button type="button" class="rs-date-chip" onclick="rsUseDateOffset(1)">Tomorrow</button>
+            <button type="button" class="rs-date-chip" onclick="rsUseDateOffset(7)">+1 week</button>
+          </div>
         </div>
       </div>
-      <div style="font-size:.78rem;color:var(--muted);margin-top:6px;margin-bottom:14px;">
-        New end time: <strong id="rsEndTimeDisplay" style="color:#5a9ad4;">—</strong>
+
+      <div class="rs-section">
+        <div class="rs-section-head"><label class="rs-section-title" for="rsStartTime">Choose a start time</label><span class="rs-section-help">Duration stays the same</span></div>
+        <div class="rs-time-grid">
+          <select class="fi" id="rsStartTime" onchange="updateRsEndTime()" aria-label="New start time"></select>
+          <div class="rs-duration-card"><span>Duration</span><strong id="rsDurationDisplay">—</strong></div>
+        </div>
+        <input type="hidden" id="rsDuration" value="1" />
+        <div class="rs-new-summary" aria-live="polite">
+          <div class="rs-new-icon" aria-hidden="true">→</div>
+          <div><span>New schedule</span><strong id="rsNewSummary">Select a date and start time</strong></div>
+        </div>
       </div>
 
-      <!-- Note to customer -->
-      <div class="fg" style="margin:0">
-        <label class="fl">Note to Customer <span style="color:var(--muted);font-weight:400;text-transform:none;">(sent via email)</span></label>
-        <textarea class="fi" id="rsNote" rows="3" placeholder="e.g. Heavy rain expected — we moved your slot to keep you safe!" style="resize:none;font-size:.84rem;line-height:1.5;"></textarea>
+      <div class="rs-section">
+        <div class="rs-section-head"><div class="rs-section-title">Why is it moving?</div><span class="rs-section-help">Choose one</span></div>
+        <div class="rs-reasons" id="rsReasons">
+          <button type="button" class="rs-reason-chip" data-reason="customer_request" onclick="selectRsReason('customer_request',this)">Customer request</button>
+          <button type="button" class="rs-reason-chip" data-reason="weather" onclick="selectRsReason('weather',this)">Weather</button>
+          <button type="button" class="rs-reason-chip" data-reason="maintenance" onclick="selectRsReason('maintenance',this)">Court maintenance</button>
+          <button type="button" class="rs-reason-chip" data-reason="schedule_conflict" onclick="selectRsReason('schedule_conflict',this)">Schedule conflict</button>
+          <button type="button" class="rs-reason-chip" data-reason="other" onclick="selectRsReason('other',this)">Other</button>
+        </div>
+        <label class="fl" for="rsNote" style="margin-top:12px">Message / reason</label>
+        <textarea class="fi rs-note" id="rsNote" maxlength="500" rows="3" oninput="updateRsNoteCount()" placeholder="Add a short explanation for the customer and audit record."></textarea>
+        <div class="rs-note-meta"><span id="rsNotifyHint">The customer will be notified when email is available.</span><span><span id="rsNoteCount">0</span>/500</span></div>
       </div>
     </div>
-    <div class="m-foot">
-      <button class="btn btn-g" onclick="closeModal('rescheduleModal')">Cancel</button>
-      <button class="btn btn-p" onclick="saveReschedule()">📅 Reschedule & Notify</button>
+    <div class="m-foot rs-foot">
+      <button class="btn btn-g" type="button" onclick="closeRescheduleModal()">Keep booking</button>
+      <button class="btn btn-p rs-submit" id="rsSaveBtn" type="button" onclick="saveReschedule()">Confirm reschedule</button>
     </div>
   </div>
 </div>
@@ -3522,20 +3590,29 @@ function bookingDetailsButton(b){
   const actionRef = b.primaryRef || b.ref;
   return `<button class="btn btn-sm" style="background:rgba(200,160,96,.15);color:var(--yellow);border:1px solid rgba(200,160,96,.35);font-weight:700" onclick="openBookingDetails('${jsArg(actionRef)}')">Details</button>`;
 }
+function bookingCanReschedule(b){
+  const grouped = Array.isArray(b?.items) && b.items.length > 1;
+  const status = String(b?.status || '').toLowerCase();
+  return !grouped && !['cancelled','forfeited','completed','expired'].includes(status);
+}
+function bookingCanCancel(b){
+  return !['cancelled','forfeited','completed','expired'].includes(String(b?.status || '').toLowerCase());
+}
 function bookingActionsHtml(b, canDelete){
   const grouped = Array.isArray(b.items) && b.items.length > 1;
   const actionRef = b.primaryRef || b.ref;
   if (window.PB_PLATFORM_V1) {
-    const canCancel = !['cancelled', 'forfeited', 'completed'].includes(String(b.status || '').toLowerCase());
+    const canCancel = bookingCanCancel(b);
     const canArchive = canDelete && ['cancelled', 'forfeited', 'completed'].includes(String(b.status || '').toLowerCase());
     return `${bookingDetailsButton(b)}
+      ${bookingCanReschedule(b) ? `<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#5a9ad4;border:1px solid rgba(74,154,220,.3)" onclick="openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>` : ''}
       ${canCancel ? `<button class="btn btn-d btn-sm" onclick="cancelPlatformBooking('${jsArg(actionRef)}')">Cancel</button>` : ''}
       ${canArchive ? `<button class="btn btn-d btn-sm" onclick="archiveBooking('${jsArg(actionRef)}')">Archive</button>` : ''}`;
   }
   const forfeited = b.status === 'forfeited' || b.paymentStatus === 'deposit_retained';
   const hasBalance = b.hostBooking && b.paymentStatus === 'downpayment_paid';
   return `${bookingDetailsButton(b)}
-    ${!grouped && !['cancelled','forfeited'].includes(b.status)?`<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#5a9ad4;border:1px solid rgba(74,154,220,.3)" onclick="openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>`:''}
+    ${bookingCanReschedule(b)?`<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#5a9ad4;border:1px solid rgba(74,154,220,.3)" onclick="openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>`:''}
     ${b.email && (forfeited || hasBalance)?`<button class="btn btn-sm" style="background:rgba(var(--green-rgb),.12);color:var(--green);border:1px solid rgba(var(--green-rgb),.3)" onclick="resendHostBalanceNotice('${jsArg(actionRef)}')">${forfeited?'Resend Notice':'Balance Reminder'}</button>`:''}
     ${b.status==='confirmed' && b.email && !hasBalance?`<button class="btn btn-sm" style="background:rgba(var(--green-rgb),.12);color:var(--green);border:1px solid rgba(var(--green-rgb),.3)" onclick="resendConfirmationEmail('${jsArg(actionRef)}')">Resend Email</button>`:''}
     <select class="fi" style="padding:4px 7px;font-size:.76rem;width:auto" ${forfeited?'disabled title="Forfeited records are permanent"':''} onchange="updateStatus('${jsArg(actionRef)}',this.value)">
@@ -3705,6 +3782,8 @@ async function openBookingDetails(ref) {
     $('bookingDetailsActions').innerHTML = `
       <button class="btn btn-g" onclick="closeBookingDetails()">Close</button>
       ${hasReceipt ? `<button class="btn btn-g" onclick="closeBookingDetails();openVerifyModal('${jsArg(actionRef)}')">View Payment</button>` : ''}
+      ${bookingCanReschedule(b) ? `<button class="btn btn-p" onclick="closeBookingDetails();openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>` : ''}
+      ${bookingCanCancel(b) ? `<button class="btn btn-d" onclick="closeBookingDetails();cancelPlatformBooking('${jsArg(actionRef)}')">Cancel booking</button>` : ''}
       ${b.hostBooking && b.email && (forfeited || historicalBalance > 0) ? `<button class="btn btn-p" onclick="resendHostBalanceNotice('${jsArg(actionRef)}')">${forfeited?'Resend Forfeiture Notice':'Send Balance Reminder'}</button>` : ''}`;
     requestAnimationFrame(() => modal.querySelector('.booking-details-modal')?.focus());
   } catch (error) {
@@ -5836,23 +5915,130 @@ function fmtHour(h) {
   return `${hh}:00 ${suffix}`;
 }
 
-function populateRsTimePicker(selectedHour) {
+const RS_REASON_MESSAGES = {
+  customer_request: 'As requested, we moved your booking to the new schedule.',
+  weather: 'Due to unsafe weather conditions, we moved your booking for everyone\'s safety.',
+  maintenance: 'The court needs maintenance at the original time, so we moved your booking to keep your slot secure.',
+  schedule_conflict: 'A court schedule conflict came up, so we moved your booking to the new time.',
+  other: '',
+};
+let _rsLastFocus = null;
+
+function rsDateString(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date).reduce((out, part) => ({ ...out, [part.type]: part.value }), {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function rsUseDateOffset(days) {
+  const base = new Date(`${rsDateString(new Date())}T12:00:00+08:00`);
+  base.setUTCDate(base.getUTCDate() + Number(days || 0));
+  $('rsNewDate').value = rsDateString(base);
+  refreshRsAvailability();
+}
+
+function populateRsTimePicker(selectedHour, openHour = 6, closeHour = 22, duration = 1, unavailableStarts = new Set()) {
   const sel = $('rsStartTime');
   sel.innerHTML = '';
-  for (let h = 6; h <= 21; h++) {
+  const first = Math.max(0, Number(openHour) || 6);
+  const last = Math.min(23, Math.max(first, Number(closeHour || 22) - Number(duration || 1)));
+  for (let h = first; h <= last; h++) {
     const opt = document.createElement('option');
     opt.value = h;
-    opt.textContent = fmtHour(h);
-    if (h === selectedHour) opt.selected = true;
+    opt.disabled = unavailableStarts.has(h);
+    opt.textContent = `${fmtHour(h)}${opt.disabled ? ' — Unavailable' : ''}`;
+    if (h === selectedHour && !opt.disabled) opt.selected = true;
     sel.appendChild(opt);
+  }
+  const available = [...sel.options].filter(option => !option.disabled);
+  if (![...sel.options].some(option => option.selected && !option.disabled)) {
+    if (available[0]) available[0].selected = true;
+    else {
+      sel.innerHTML = '<option value="" disabled selected>No available start times</option>';
+    }
   }
   updateRsEndTime();
 }
 
+async function refreshRsAvailability(preferredHour = null) {
+  const modal = $('rescheduleModal');
+  const date = $('rsNewDate')?.value;
+  const courtId = modal?.dataset.courtId;
+  const ref = modal?.dataset.ref;
+  const duration = Number($('rsDuration')?.value || 1);
+  if (!date || !courtId) { updateRsSummary(); return; }
+  const select = $('rsStartTime');
+  select.disabled = true;
+  try {
+    const rows = await DB.getBookings({ date });
+    const occupied = new Set();
+    (rows || []).filter(item =>
+      String(item.ref) !== String(ref) &&
+      String(item.courtId) === String(courtId) &&
+      !['cancelled','forfeited','completed','expired'].includes(String(item.status || '').toLowerCase())
+    ).forEach(item => (item.slots || []).forEach(hour => occupied.add(Number(hour))));
+    const unavailable = new Set();
+    const openHour = Number(modal.dataset.openHour || 6);
+    const closeHour = Number(modal.dataset.closeHour || 22);
+    const now = new Date();
+    const currentHour = Number(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Manila', hour: '2-digit', hourCycle: 'h23',
+    }).format(now));
+    for (let start = openHour; start <= closeHour - duration; start++) {
+      const isPast = date === rsDateString(now) && start <= currentHour;
+      if (isPast || Array.from({ length: duration }, (_, index) => start + index).some(hour => occupied.has(hour))) unavailable.add(start);
+    }
+    const selected = preferredHour !== null && Number.isInteger(Number(preferredHour)) ? Number(preferredHour) : Number(select.value);
+    populateRsTimePicker(selected, openHour, closeHour, duration, unavailable);
+  } catch (_) {
+    populateRsTimePicker(Number(preferredHour ?? select.value), Number(modal.dataset.openHour || 6), Number(modal.dataset.closeHour || 22), duration);
+  } finally {
+    select.disabled = false;
+    updateRsSummary();
+  }
+}
+
 function updateRsEndTime() {
-  const start = parseInt($('rsStartTime').value);
-  const dur = parseInt($('rsDuration').value);
-  $('rsEndTimeDisplay').textContent = fmtHour(start + dur);
+  updateRsSummary();
+}
+
+function updateRsSummary() {
+  const date = $('rsNewDate')?.value;
+  const start = parseInt($('rsStartTime')?.value);
+  const dur = parseInt($('rsDuration')?.value);
+  const summary = $('rsNewSummary');
+  if (!summary) return;
+  summary.textContent = date && Number.isInteger(start) && Number.isInteger(dur)
+    ? `${fmtD(date)} · ${fmtHour(start)} – ${fmtHour(start + dur)}`
+    : 'Select a date and start time';
+}
+
+function updateRsNoteCount() {
+  $('rsNoteCount').textContent = String($('rsNote')?.value?.length || 0);
+}
+
+function selectRsReason(reason, button) {
+  const modal = $('rescheduleModal');
+  modal.dataset.reason = reason;
+  modal.querySelectorAll('.rs-reason-chip').forEach(chip => {
+    const active = chip === button;
+    chip.classList.toggle('active', active);
+    chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  $('rsNote').value = RS_REASON_MESSAGES[reason] || '';
+  updateRsNoteCount();
+  if (reason === 'other') $('rsNote').focus();
+}
+
+function closeRescheduleModal() {
+  const modal = $('rescheduleModal');
+  if (!modal) return;
+  modal.classList.remove('show');
+  modal.setAttribute('aria-hidden','true');
+  modal.inert = true;
+  if (_rsLastFocus && document.contains(_rsLastFocus)) _rsLastFocus.focus();
+  _rsLastFocus = null;
 }
 
 async function openRescheduleModal(ref) {
@@ -5860,40 +6046,71 @@ async function openRescheduleModal(ref) {
   if (group?.isGroup) { toast('Grouped bookings must be rescheduled court-by-court from individual booking records.', 'inf'); return; }
   const b = await DB.getBookingByRef(ref);
   if (!b) { toast('Booking not found.', 'err'); return; }
+  if (!bookingCanReschedule(b)) { toast('This booking can no longer be rescheduled.', 'err'); return; }
 
   $('rsOldCourt').textContent = b.courtName;
   $('rsOldDate').textContent = fmtD(b.date);
   $('rsOldTime').textContent = `${b.startTime} – ${b.endTime}`;
-  $('rsName').textContent = b.fullName;
+  $('rsName').textContent = b.email ? `${b.fullName} · ${b.email}` : b.fullName;
 
-  // Default to tomorrow
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  $('rsNewDate').value = tomorrow.toISOString().split('T')[0];
-  $('rsNewDate').min = new Date().toISOString().split('T')[0];
+  const today = rsDateString(new Date());
+  $('rsNewDate').min = today;
 
-  // Match original start hour and duration
   const startH = b.slots?.length ? Math.min(...b.slots) : 8;
-  const dur = Math.min(Math.max(b.duration || 2, 1), 4);
+  const dur = Math.max(1, Number(b.duration || b.slots?.length || 1));
   $('rsDuration').value = dur;
-  populateRsTimePicker(startH);
+  $('rsDurationDisplay').textContent = `${dur} hour${dur === 1 ? '' : 's'}`;
+  let openHour = 6;
+  let closeHour = 22;
+  try {
+    const court = (await DB.getCourts()).find(item => String(item.id) === String(b.courtId));
+    openHour = parseInt(String(court?.opensAt || '06:00').slice(0,2), 10);
+    closeHour = String(court?.closesAt || '').startsWith('00:00') ? 24 : parseInt(String(court?.closesAt || '22:00').slice(0,2), 10);
+  } catch (_) {}
+  populateRsTimePicker(startH, openHour, closeHour, dur);
 
-  $('rsNote').value = 'Due to expected heavy rain, we have rescheduled your booking for your safety and convenience. We apologize for the inconvenience!';
+  $('rsNote').value = '';
+  $('rsNotifyHint').textContent = window.PB_PLATFORM_V1
+    ? 'The reason is saved in the booking audit history.'
+    : b.email ? `This message will be emailed to ${b.email}.` : 'No customer email is saved; the reason is kept with the update.';
+  updateRsNoteCount();
 
-  $('rescheduleModal').dataset.ref = ref;
-  $('rescheduleModal').dataset.oldDate = b.date;
-  $('rescheduleModal').dataset.oldStart = b.startTime;
-  $('rescheduleModal').dataset.oldEnd = b.endTime;
-  $('rescheduleModal').classList.add('show');
+  const modal = $('rescheduleModal');
+  modal.dataset.ref = ref;
+  modal.dataset.oldDate = b.date;
+  modal.dataset.oldStart = b.startTime;
+  modal.dataset.oldEnd = b.endTime;
+  modal.dataset.courtId = b.courtId;
+  modal.dataset.openHour = openHour;
+  modal.dataset.closeHour = closeHour;
+  modal.dataset.reason = '';
+  modal.querySelectorAll('.rs-reason-chip').forEach(chip => { chip.classList.remove('active'); chip.setAttribute('aria-pressed','false'); });
+  _rsLastFocus = document.activeElement;
+  modal.inert = false;
+  modal.setAttribute('aria-hidden','false');
+  modal.classList.add('show');
+  requestAnimationFrame(() => modal.querySelector('.rs-modal')?.focus());
+  rsUseDateOffset(1);
+}
+
+function rsStartHour(value) {
+  const match = String(value || '').match(/^(\d{1,2})/);
+  if (!match) return -1;
+  let hour = Number(match[1]);
+  if (/PM/i.test(value) && hour !== 12) hour += 12;
+  if (/AM/i.test(value) && hour === 12) hour = 0;
+  return hour;
 }
 
 async function saveReschedule() {
-  const ref = $('rescheduleModal').dataset.ref;
+  const modal = $('rescheduleModal');
+  const ref = modal.dataset.ref;
   if (!ref) return;
 
-  const oldDate = $('rescheduleModal').dataset.oldDate;
-  const oldStartTime = $('rescheduleModal').dataset.oldStart;
-  const oldEndTime = $('rescheduleModal').dataset.oldEnd;
+  const oldDate = modal.dataset.oldDate;
+  const oldStartTime = modal.dataset.oldStart;
+  const oldEndTime = modal.dataset.oldEnd;
+  const reason = modal.dataset.reason;
   const newDate = $('rsNewDate').value;
   const startH = parseInt($('rsStartTime').value);
   const dur = parseInt($('rsDuration').value);
@@ -5901,53 +6118,52 @@ async function saveReschedule() {
   const note = $('rsNote').value.trim();
 
   if (!newDate) { toast('Please select a new date.', 'err'); return; }
-  if (isNaN(startH) || isNaN(dur)) { toast('Please select a start time and duration.', 'err'); return; }
+  if (isNaN(startH) || isNaN(dur)) { toast('Please select a start time.', 'err'); return; }
+  if (!reason) { toast('Choose a reason for the reschedule.', 'err'); return; }
+  if (note.length < 3) { toast('Add a short reason of at least 3 characters.', 'err'); $('rsNote').focus(); return; }
+  if (newDate === oldDate && startH === rsStartHour(oldStartTime)) { toast('Choose a different date or start time.', 'err'); return; }
 
   const slots = Array.from({ length: dur }, (_, i) => startH + i);
   const newStartTime = fmtHour(startH);
   const newEndTime = fmtHour(endH);
+  const saveBtn = $('rsSaveBtn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Rescheduling…';
 
   try {
-    await DB.updateBooking(ref, {
-      date: newDate,
-      startTime: newStartTime,
-      endTime: newEndTime,
-      duration: dur,
-      slots,
-    });
+    if (typeof DB.rescheduleBooking === 'function') {
+      await DB.rescheduleBooking(ref, { date: newDate, startHour: startH, duration: dur, reason: note });
+    } else {
+      await DB.updateBooking(ref, { date: newDate, startTime: newStartTime, endTime: newEndTime, duration: dur, slots });
+    }
 
-    closeModal('rescheduleModal');
-    toast('Booking rescheduled!');
+    closeRescheduleModal();
+    toast(`Booking moved to ${fmtD(newDate)}, ${newStartTime}.`);
     await renderBookings();
     renderDash();
 
     DB.getBookingByRef(ref).then(async bk => {
       if (!bk) return;
       const payload = {
-        bookingRef: bk.ref,
-        email: bk.email,
-        fullName: bk.fullName,
-        courtName: bk.courtName,
-        oldDate,
-        oldStartTime,
-        oldEndTime,
-        newDate,
-        newStartTime,
-        newEndTime,
-        newDuration: dur,
-        note,
+        bookingRef: bk.ref, email: bk.email, fullName: bk.fullName, courtName: bk.courtName,
+        oldDate, oldStartTime, oldEndTime, newDate, newStartTime, newEndTime,
+        newDuration: dur, note,
       };
-
       await Promise.all([
         bk.email ? DB.sendRescheduleEmail(payload, { allowFailure: true }).then(j => {
           if (j?.ok) toast('Reschedule email sent to customer!');
           else if (!j?.skipped) toast(`Booking rescheduled, but email failed: ${j?.error || 'unknown error'}`, 'err');
         }).catch(() => {}) : Promise.resolve(),
-        notifyBookingUpdateSafe(bk, 'booking_rescheduled', note || `Moved from ${oldDate} ${oldStartTime}-${oldEndTime} to ${newDate} ${newStartTime}-${newEndTime}`),
+        notifyBookingUpdateSafe(bk, 'booking_rescheduled', note),
       ]);
     }).catch(() => {});
   } catch(e) {
-    toast('Failed to reschedule booking.', 'err');
+    const message = String(e?.message || 'Failed to reschedule booking.');
+    const conflict = e?.code === '23P01' || /overlap|no longer available|already booked|conflict/i.test(message);
+    toast(conflict ? 'That time is no longer available. Please choose another start time.' : message, 'err');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Confirm reschedule';
   }
 }
 
@@ -8163,6 +8379,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     if(e.target!==ov) return;
     if(ov.id==='bookingDetailsModal') closeBookingDetails();
     else if(ov.id==='verifyModal') closeVerifyModal();
+    else if(ov.id==='rescheduleModal') closeRescheduleModal();
     else if(['rmPrepareModal','rmPayModal','rmReviewModal','rmDetailModal','rmCancelModal'].includes(ov.id)) closeRemittanceModal(ov.id);
     else ov.classList.remove('show');
   }));
@@ -8226,7 +8443,7 @@ function applyPlatformVisibility() {
 <!-- ============================================================
      ELECTRONIC USAGE AGREEMENT MODAL (court_owner only)
      Shown once per version after login. Blocks dashboard access
-     until the user scrolls, types their legal name, draws a
+      until the user types their legal name, draws a
      signature, and clicks "I Agree & Sign".
      ============================================================ -->
 <div id="agreementOverlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
@@ -8246,7 +8463,7 @@ function applyPlatformVisibility() {
     <!-- Scrollable body -->
     <div id="agreeScrollBody" style="overflow-y:auto;padding:22px 26px;flex:1;font-size:.87rem;line-height:1.75;color:var(--text,#e8eaf0)">
 
-      <p style="margin:0 0 14px;color:#a0b0c0;font-size:.8rem;font-style:italic">Read the full agreement before signing. The <strong>Sign</strong> button unlocks only after you scroll to the bottom.</p>
+      <p style="margin:0 0 14px;color:#a0b0c0;font-size:.8rem;font-style:italic">Please read the full agreement before completing the signature section below.</p>
 
       <h4 style="margin:0 0 8px;color:var(--green);font-size:.85rem;letter-spacing:.6px;text-transform:uppercase">1. Parties</h4>
       <p style="margin:0 0 14px"><strong>Platform Provider:</strong> [Platform Provider / System Owner Legal Name] ("Platform Provider"), the developer, system owner, and administrator of the Pickleball Court Booking System, a software platform that enables customers to discover and book pickleball courts online.<br><br><strong>Court Owner:</strong> The individual or business identified by the account below ("Court Owner"), who independently owns, operates, and is solely responsible for the physical Backyard Pickle venue at [Court Owner-confirmed full address], Philippines.<br><br>The Platform Provider does not own, manage, staff, price, or operate the physical court. The Platform Provider provides the online booking software and related platform services only.</p>
@@ -8335,7 +8552,7 @@ function applyPlatformVisibility() {
         <div style="margin-bottom:16px">
           <label style="font-size:.75rem;text-transform:uppercase;letter-spacing:.8px;color:var(--green);font-weight:700;display:block;margin-bottom:6px">Draw Your Signature <span style="color:#e53935">*</span></label>
           <div style="position:relative;background:var(--input,#1a2535);border:1.5px solid var(--border,rgba(255,255,255,.1));border-radius:8px;overflow:hidden">
-            <canvas id="agreeCanvas" width="620" height="140" style="display:block;width:100%;cursor:crosshair;touch-action:none"></canvas>
+            <canvas id="agreeCanvas" width="620" height="220" role="application" aria-label="Signature drawing area" tabindex="0" style="display:block;width:100%;height:220px;cursor:crosshair;touch-action:none;user-select:none;-webkit-user-select:none"></canvas>
             <button type="button" onclick="agreeClearSig()" style="position:absolute;top:8px;right:10px;background:rgba(229,57,53,.15);color:#e53935;border:1px solid rgba(229,57,53,.3);border-radius:6px;font-size:.7rem;padding:3px 10px;cursor:pointer">✕ Clear</button>
           </div>
           <div style="font-size:.68rem;color:var(--muted,#7a8a9a);margin-top:5px">Draw your signature using your mouse or finger. This will be stored as evidence of acceptance.</div>
@@ -8393,20 +8610,79 @@ async function updateAgreementFeeCopy() {
 
 function agreeInitCanvas() {
   const canvas = document.getElementById('agreeCanvas');
-  if (!canvas) return;
+  if (!canvas || canvas.dataset.signatureReady === '1') return;
+  canvas.dataset.signatureReady = '1';
+  canvas.style.touchAction = 'none';
   const ctx = canvas.getContext('2d');
+  let activePointerId = null;
   function getPos(e) {
     const r = canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
     const scaleX = canvas.width / r.width;
     const scaleY = canvas.height / r.height;
-    const src = e.touches ? e.touches[0] : e;
+    const src = e.touches?.[0] || e.changedTouches?.[0] || e;
     return { x: (src.clientX - r.left) * scaleX, y: (src.clientY - r.top) * scaleY };
   }
-  function start(e) { e.preventDefault(); const p=getPos(e); _agreeDrawing=true; _agreePrevX=p.x; _agreePrevY=p.y; ctx.beginPath(); ctx.moveTo(p.x,p.y); }
-  function move(e) { if (!_agreeDrawing) return; e.preventDefault(); const p=getPos(e); ctx.lineWidth=2.2; ctx.lineCap='round'; ctx.strokeStyle='#4ade80'; ctx.beginPath(); ctx.moveTo(_agreePrevX,_agreePrevY); ctx.lineTo(p.x,p.y); ctx.stroke(); _agreePrevX=p.x; _agreePrevY=p.y; _agreeHasSig=true; agreeCheckReady(); }
-  function stop() { _agreeDrawing=false; }
-  canvas.addEventListener('mousedown',start); canvas.addEventListener('mousemove',move); canvas.addEventListener('mouseup',stop); canvas.addEventListener('mouseleave',stop);
-  canvas.addEventListener('touchstart',start,{passive:false}); canvas.addEventListener('touchmove',move,{passive:false}); canvas.addEventListener('touchend',stop);
+  function start(e) {
+    if (e.isPrimary === false || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (e.cancelable) e.preventDefault();
+    const p = getPos(e);
+    if (!p) return;
+    _agreeDrawing = true;
+    activePointerId = e.pointerId ?? null;
+    _agreePrevX = p.x;
+    _agreePrevY = p.y;
+    ctx.beginPath();
+    ctx.moveTo(p.x,p.y);
+    if (e.pointerId !== undefined && canvas.setPointerCapture) {
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+  }
+  function move(e) {
+    if (!_agreeDrawing || (activePointerId !== null && e.pointerId !== undefined && e.pointerId !== activePointerId)) return;
+    if (e.cancelable) e.preventDefault();
+    const p = getPos(e);
+    if (!p) return;
+    const r = canvas.getBoundingClientRect();
+    ctx.lineWidth = Math.max(3, 3 * canvas.width / Math.max(r.width, 1));
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#4ade80';
+    ctx.beginPath();
+    ctx.moveTo(_agreePrevX,_agreePrevY);
+    ctx.lineTo(p.x,p.y);
+    ctx.stroke();
+    _agreePrevX = p.x;
+    _agreePrevY = p.y;
+    _agreeHasSig = true;
+    agreeCheckReady();
+  }
+  function stop(e) {
+    if (activePointerId !== null && e?.pointerId !== undefined && e.pointerId !== activePointerId) return;
+    if (e?.cancelable) e.preventDefault();
+    if (e?.pointerId !== undefined && canvas.releasePointerCapture) {
+      try {
+        if (!canvas.hasPointerCapture || canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+    }
+    _agreeDrawing = false;
+    activePointerId = null;
+  }
+  if (window.PointerEvent) {
+    canvas.addEventListener('pointerdown', start);
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', stop);
+    canvas.addEventListener('pointercancel', stop);
+    canvas.addEventListener('lostpointercapture', stop);
+  } else {
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', stop);
+    canvas.addEventListener('touchstart', start, { passive:false });
+    canvas.addEventListener('touchmove', move, { passive:false });
+    canvas.addEventListener('touchend', stop, { passive:false });
+    canvas.addEventListener('touchcancel', stop, { passive:false });
+  }
 }
 
 function agreeClearSig() {
@@ -8475,27 +8751,17 @@ async function checkAgreementGate(session) {
   const overlay = document.getElementById('agreementOverlay');
   overlay.style.display = 'flex';
   agreeInitCanvas();
-  // Auto-unlock sign section immediately (no scroll gate needed — all content visible in scrollable pane)
-  // Scroll detection: unlock Sign button only after user scrolls near bottom
-  const body = document.getElementById('agreeScrollBody');
+  // Keep the signing controls interactive on every viewport. The submit button
+  // still requires a legal name, a drawn signature, and the checked consent.
   const section = document.getElementById('agreeSignSection');
-  section.style.opacity = '0.35';
-  section.style.pointerEvents = 'none';
-  section.style.transition = 'opacity .4s';
-  function onScroll() {
-    if (body.scrollTop + body.clientHeight >= body.scrollHeight - 40) {
-      section.style.opacity = '1';
-      section.style.pointerEvents = '';
-      body.removeEventListener('scroll', onScroll);
-    }
-  }
-  body.addEventListener('scroll', onScroll);
+  section.style.opacity = '1';
+  section.style.pointerEvents = 'auto';
   return true; // gated — caller should NOT call goto()
 }
 </script>
 
 <script src="supabase.min.js"></script>
 <script src="tenant-config.js?v=20260720-court-status-v4"></script>
-<script src="supabase-config.js?v=20260720-court-status-v4"></script>
+<script src="supabase-config.js?v=20260723-reschedule-v1"></script>
 </body>
 </html>

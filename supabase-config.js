@@ -1578,6 +1578,48 @@ window.DB = {
     _pbClearFastCache(['bookings']);
   },
 
+  async rescheduleBooking(ref, { date, startHour, duration, reason }) {
+    const booking = await this.getBookingByRef(ref);
+    if (!booking) throw new Error('Booking not found or no longer accessible.');
+    const hour = Number(startHour);
+    const hours = Number(duration);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) || !Number.isInteger(hour) || !Number.isInteger(hours)) {
+      throw new Error('Choose a valid date and start time.');
+    }
+    if (PB_PLATFORM_V1) {
+      if (!booking.id) throw new Error('This platform booking is missing its protected booking ID.');
+      const { data, error } = await _sb.rpc('reschedule_tenant_booking', {
+        p_booking_id: booking.id,
+        p_local_date: date,
+        p_start_time: `${String(hour).padStart(2, '0')}:00:00`,
+        p_duration_hours: hours,
+        p_reason: String(reason || '').trim(),
+      });
+      if (error) throw error;
+      _pbClearFastCache(['bookings', 'platformAvailability']);
+      return data;
+    }
+    const slots = Array.from({ length: hours }, (_, index) => hour + index);
+    const existing = (await this.getBookings()).filter(item =>
+      String(item.ref) !== String(ref) &&
+      String(item.courtId) === String(booking.courtId) &&
+      item.date === date &&
+      !['cancelled','forfeited'].includes(String(item.status || '').toLowerCase())
+    );
+    if (hasSlotConflict(existing, { slots })) {
+      const conflict = new Error('One or more time slots are no longer available.');
+      conflict.code = '23P01';
+      throw conflict;
+    }
+    return this.updateBooking(ref, {
+      date,
+      startTime: _fmtBookingHour(hour),
+      endTime: _fmtBookingHour(hour + hours),
+      duration: hours,
+      slots,
+    });
+  },
+
   // Stamp a set of bookings as billed on a given weekly statement (idempotent
   // audit trail; a booking is only ever billed once).
   async markBookingsBilled(refs, weeklyFeeId) {
@@ -3463,6 +3505,32 @@ window.DB = {
         throw missing;
       }
       writeDb(db);
+    },
+    async rescheduleBooking(ref, { date, startHour, duration }) {
+      const db = readDb();
+      const booking = db.bookings.find(b => String(b.ref) === String(ref));
+      if (!booking) throw new Error('Booking not found or no longer accessible.');
+      const hour = Number(startHour);
+      const hours = Number(duration);
+      const slots = Array.from({ length: hours }, (_, index) => hour + index);
+      const existing = db.bookings.filter(item =>
+        String(item.ref) !== String(ref) &&
+        String(item.courtId) === String(booking.courtId) &&
+        item.date === date &&
+        !['cancelled','forfeited'].includes(String(item.status || '').toLowerCase())
+      );
+      if (hasSlotConflict(existing, { slots })) {
+        const conflict = new Error('One or more time slots are no longer available.');
+        conflict.code = '23P01';
+        throw conflict;
+      }
+      return this.updateBooking(ref, {
+        date,
+        startTime: _fmtBookingHour(hour),
+        endTime: _fmtBookingHour(hour + hours),
+        duration: hours,
+        slots,
+      });
     },
     async markBookingsBilled(refs, weeklyFeeId) {
       if (!Array.isArray(refs) || refs.length === 0) return;
