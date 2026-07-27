@@ -1840,6 +1840,33 @@ window.DB = {
     _pbClearFastCache(['bookings']);
   },
 
+  async reinstateBooking(ref, reason) {
+    if (!PB_PLATFORM_V1) {
+      const error = new Error('Protected booking reinstatement is available only on the tenant platform.');
+      error.code = 'PLATFORM_REINSTATEMENT_REQUIRED';
+      throw error;
+    }
+    const role = String(window.Auth?.getSession?.()?.role || '').toLowerCase();
+    if (!['owner', 'court_owner'].includes(role)) {
+      const error = new Error('Only the System Owner or Court Owner can reinstate bookings.');
+      error.code = 'BOOKING_REINSTATEMENT_ACCESS_DENIED';
+      throw error;
+    }
+    const booking = await this.getBookingByRef(ref);
+    if (!booking?.id) throw new Error('Booking not found or no longer accessible.');
+    const reinstatementReason = String(reason || '').trim();
+    if (reinstatementReason.length < 3 || reinstatementReason.length > 500) {
+      throw new Error('Enter a reinstatement reason between 3 and 500 characters.');
+    }
+    const { data, error } = await _sb.rpc('reinstate_tenant_booking', {
+      p_booking_id: booking.id,
+      p_reason: reinstatementReason,
+    });
+    if (error) throw error;
+    _pbClearFastCache(['bookings', 'platformAvailability']);
+    return data;
+  },
+
   async rescheduleBooking(ref, change = {}) {
     if (!PB_PLATFORM_V1) {
       const error = new Error('Protected rescheduling is unavailable in legacy mode.');
