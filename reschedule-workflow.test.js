@@ -138,7 +138,7 @@ test('protected DTO mapping accepts camel and database rows', () => {
 
 test('every entry page loads the same protected reschedule client version', () => {
   for (const file of ['index.html', 'admin.html', 'login.html', 'host.html']) {
-    assert.match(read(file), /supabase-config\.js\?v=20260727-booking-reinstate-v1/);
+    assert.match(read(file), /supabase-config\.js\?v=20260727-overnight-hours-v1/);
   }
 });
 

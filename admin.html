@@ -3928,27 +3928,15 @@ function canRescheduleBooking(b) {
 function bookingCanCancel(b){
   return !['cancelled','forfeited','completed','expired'].includes(String(b?.status || '').toLowerCase());
 }
-function bookingCanReinstate(b){
-  if (!window.PB_PLATFORM_V1 || String(b?.status || '').toLowerCase() !== 'cancelled') return false;
-  if (!['owner','court_owner'].includes(String(sess?.role || '').toLowerCase())) return false;
-  if (['refunded','rejected'].includes(String(b?.paymentStatus || '').toLowerCase())) return false;
-  if (b?.endsAt) {
-    const endMs = new Date(b.endsAt).getTime();
-    if (Number.isFinite(endMs)) return endMs > Date.now();
-  }
-  return String(b?.date || '') >= phDateKeyFromTimestamp(new Date().toISOString());
-}
 function bookingActionsHtml(b, canDelete){
   const grouped = Array.isArray(b.items) && b.items.length > 1;
   const actionRef = b.primaryRef || b.ref;
   if (window.PB_PLATFORM_V1) {
     const canCancel = bookingCanCancel(b);
-    const canReinstate = bookingCanReinstate(b);
     const canArchive = canDelete && ['cancelled', 'forfeited', 'completed'].includes(String(b.status || '').toLowerCase());
     return `${bookingDetailsButton(b)}
       ${canRescheduleBooking(b) ? `<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#3f7fb7;border:1px solid rgba(74,154,220,.3);font-weight:700" onclick="openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>` : ''}
       ${b.status==='confirmed' && b.email ? `<button class="btn btn-sm" style="background:rgba(var(--green-rgb),.12);color:var(--green);border:1px solid rgba(var(--green-rgb),.3)" onclick="resendConfirmationEmail('${jsArg(actionRef)}')">Resend Email</button>` : ''}
-      ${canReinstate ? `<button class="btn btn-sm" style="background:rgba(var(--green-rgb),.12);color:var(--green);border:1px solid rgba(var(--green-rgb),.3);font-weight:800" onclick="reinstatePlatformBooking('${jsArg(actionRef)}')">Reinstate</button>` : ''}
       ${canCancel ? `<button class="btn btn-d btn-sm" onclick="cancelPlatformBooking('${jsArg(actionRef)}')">Cancel</button>` : ''}
       ${canArchive ? `<button class="btn btn-d btn-sm" onclick="archiveBooking('${jsArg(actionRef)}')">Archive</button>` : ''}`;
   }
@@ -5241,10 +5229,10 @@ async function notifyBookingUpdateSafe(bookingOrRef, event, note = '') {
   } catch (_) {}
 }
 
-async function updateStatus(ref, status, extraUpdates = {}) {
+async function updateStatus(ref, status) {
   const updates = status === 'forfeited'
-    ? { status, paymentStatus: 'deposit_retained', forfeitedAt: new Date().toISOString(), forfeitureReason: 'Remaining balance was not paid by the deadline.', ...extraUpdates }
-    : { status, ...extraUpdates };
+    ? { status, paymentStatus: 'deposit_retained', forfeitedAt: new Date().toISOString(), forfeitureReason: 'Remaining balance was not paid by the deadline.' }
+    : { status };
   const group = await updateBookingGroupByRef(ref, updates);
   toast(`Status updated to ${status}.`);
 
@@ -5272,75 +5260,12 @@ async function updateStatus(ref, status, extraUpdates = {}) {
 }
 
 async function cancelPlatformBooking(ref) {
-  if (!confirm(`Cancel booking ${ref}?\n\nThe reserved slot will be released. Only an owner can reinstate it, and only if the slot remains available.`)) return;
-  const reason = prompt('Reason for cancellation (required):', 'Cancelled by owner');
-  if (reason === null) return;
-  const cleanReason = String(reason || '').trim();
-  if (cleanReason.length < 3 || cleanReason.length > 500) {
-    toast('Enter a cancellation reason between 3 and 500 characters.', 'err');
-    return;
-  }
+  if (!confirm(`Cancel booking ${ref}? The reserved slot will be released.`)) return;
   try {
-    await updateStatus(ref, 'cancelled', { reason: cleanReason });
-    toastWithAction(`Booking ${ref} cancelled.`, 'Undo', async () => {
-      await reinstatePlatformBooking(ref, {
-        reason: 'Immediate undo of accidental cancellation',
-        skipConfirmation: true,
-      });
-    });
+    await updateStatus(ref, 'cancelled');
   } catch (error) {
     console.error('cancelPlatformBooking:', error);
     toast(error?.message || 'Could not cancel the booking.', 'err');
-  }
-}
-
-async function reinstatePlatformBooking(ref, options = {}) {
-  if (!['owner','court_owner'].includes(String(sess?.role || '').toLowerCase())) {
-    toast('Only the System Owner or Court Owner can reinstate bookings.', 'err');
-    return false;
-  }
-  if (!options.skipConfirmation && !confirm(
-    `Reinstate booking ${ref} as Confirmed?\n\nThis succeeds only if every original court slot is still available.`
-  )) return false;
-  let reason = options.reason;
-  if (!reason) {
-    reason = prompt('Reason for reinstatement (required):', 'Accidental cancellation');
-    if (reason === null) return false;
-  }
-  const cleanReason = String(reason || '').trim();
-  if (cleanReason.length < 3 || cleanReason.length > 500) {
-    toast('Enter a reinstatement reason between 3 and 500 characters.', 'err');
-    return false;
-  }
-  try {
-    await DB.reinstateBooking(ref, cleanReason);
-    await Promise.all([renderBookings(), renderDash()]);
-    const booking = await getBookingGroupByRef(ref);
-    toast(`Booking ${ref} restored to Confirmed.`);
-    if (booking) {
-      await Promise.all([
-        booking.email
-          ? sendBookingConfirmationNotice(booking, `Restored booking confirmation sent to ${booking.email}.`)
-          : Promise.resolve(),
-        notifyBookingUpdateSafe(
-          booking,
-          'booking_reinstated',
-          `Restored by ${sess?.fullName || sess?.email || 'owner'}: ${cleanReason}`,
-        ),
-      ]);
-    }
-    return true;
-  } catch (error) {
-    console.error('reinstatePlatformBooking:', error);
-    const message = String(error?.message || '');
-    toast(
-      /no longer available|conflict|overlap/i.test(message)
-        ? 'Cannot reinstate: the original court time has already been taken. Please reschedule instead.'
-        : message || 'Could not reinstate the booking.',
-      'err',
-    );
-    await renderBookings().catch(() => {});
-    return false;
   }
 }
 
@@ -9912,6 +9837,6 @@ async function checkAgreementGate(session) {
 
 <script src="supabase.min.js"></script>
 <script src="tenant-config.js?v=20260720-court-status-v4"></script>
-<script src="supabase-config.js?v=20260727-booking-reinstate-v1"></script>
+<script src="supabase-config.js?v=20260727-overnight-hours-v1"></script>
 </body>
 </html>
