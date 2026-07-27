@@ -227,6 +227,25 @@ function _pbClockHour(value, endOfDay = false) {
   return hour;
 }
 
+function _pbAddCalendarDays(date, days) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''));
+  if (!match) return String(date || '');
+  const value = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  value.setUTCDate(value.getUTCDate() + Number(days || 0));
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${String(value.getUTCDate()).padStart(2, '0')}`;
+}
+
+function _pbCourtOperatingHours(court) {
+  const opensAt = court?.opensAt ?? court?.opens_at;
+  const closesAt = court?.closesAt ?? court?.closes_at;
+  const open = _pbClockHour(opensAt) ?? 6;
+  const closeClock = _pbClockHour(closesAt) ?? 0;
+  return {
+    open,
+    close: closeClock <= open ? closeClock + 24 : closeClock,
+  };
+}
+
 function _pbPlatformCourtToLegacy(court) {
   const regular = court?.pricingConfig?.regular || {};
   const bands = Array.isArray(regular.bands) ? regular.bands : [];
@@ -474,6 +493,11 @@ function _pbPlatformBookingToLegacy(row, courtMap, timeZone) {
     archiveReason: row.archive_reason || row.archiveReason || null,
     expiresAt: row.expires_at || row.expiresAt || null,
     createdAt: row.created_at || row.createdAt,
+    createdVia: metadata.createdVia || (metadata.source === 'manual_dashboard' ? 'admin' : 'customer'),
+    createdByUserId: metadata.createdByUserId || null,
+    createdByRole: metadata.createdByRole || null,
+    createdByName: metadata.createdByName || null,
+    createdByEmail: metadata.createdByEmail || null,
     lastRescheduleEventId: lastReschedule.eventId || lastReschedule.event_id || null,
     rescheduleEvents,
   };
@@ -493,12 +517,9 @@ function _pbPlatformSettingsToLegacy(bootstrap) {
   const court = Array.isArray(bootstrap?.courts) ? bootstrap.courts[0] : null;
   if (court) {
     const legacyCourt = _pbPlatformCourtToLegacy(court);
-    settings.open_hour = String(_pbClockHour(court.opensAt) ?? 6);
-    settings.close_hour = String(
-      String(court.closesAt || '').startsWith('00:00')
-        ? 24
-        : (_pbClockHour(court.closesAt, true) ?? 24)
-    );
+    const operatingHours = _pbCourtOperatingHours(court);
+    settings.open_hour = String(operatingHours.open);
+    settings.close_hour = String(operatingHours.close);
     settings.pricing_tiers = JSON.stringify(legacyCourt.rateSchedule);
   }
   const paymentMode = settings['booking.payment_mode'] || bootstrap?.tenant?.publicConfig?.paymentAcceptanceMode;
@@ -601,7 +622,7 @@ function _pbLocalIntervalHours(startsAt, endsAt, targetDate) {
   if (startDate !== targetDate) return [];
   const startHour = Number(startText.slice(11, 13));
   let endHour = Number(endText.slice(11, 13));
-  if (endDate > startDate && endHour === 0) endHour = 24;
+  if (endDate > startDate) endHour += 24;
   if (!Number.isInteger(startHour) || !Number.isInteger(endHour) || endHour <= startHour) return [];
   return Array.from({ length: endHour - startHour }, (_, index) => startHour + index);
 }
@@ -635,6 +656,40 @@ function _pbRememberPlatformBlockedHours(availability) {
     }));
   }
   _pbPlatformBlockedHoursByDate.set(date, Object.freeze(rules));
+}
+
+function _pbMirrorOvernightBlockedHours(sourceDate, operatingDate, bootstrap) {
+  const sourceRules = _pbPlatformBlockedHoursByDate.get(String(sourceDate || '')) || [];
+  if (!sourceRules.length) return;
+  const courts = Array.isArray(bootstrap?.courts) ? bootstrap.courts : [];
+  const closeLimitByCourt = new Map(courts.map(court => {
+    const hours = _pbCourtOperatingHours(court);
+    return [String(court.id), Math.max(0, hours.close - 24)];
+  }));
+  const maximumLimit = Math.max(0, ...closeLimitByCourt.values());
+  if (maximumLimit <= 0) return;
+
+  const mirrored = sourceRules.map(rule => {
+    const limit = rule.courtId == null
+      ? maximumLimit
+      : (closeLimitByCourt.get(String(rule.courtId)) || 0);
+    const slots = rule.slots
+      .filter(hour => Number(hour) < limit)
+      .map(hour => Number(hour) + 24);
+    if (!slots.length) return null;
+    return Object.freeze({
+      ...rule,
+      dates: Object.freeze([operatingDate]),
+      slots: Object.freeze(slots),
+    });
+  }).filter(Boolean);
+  if (!mirrored.length) return;
+
+  const existing = _pbPlatformBlockedHoursByDate.get(String(operatingDate || '')) || [];
+  _pbPlatformBlockedHoursByDate.set(
+    String(operatingDate),
+    Object.freeze([...existing, ...mirrored]),
+  );
 }
 
 function _pbPlatformBlockedRuleFor(date, hour, courtId = null) {
@@ -681,10 +736,7 @@ function _pbPlatformAvailabilityToLegacyBookings(availability, bootstrap) {
       const config = courtConfig.get(String(court.id)) || {};
       let slots = _pbLocalIntervalHours(block.startsAt, block.endsAt, date);
       if (!block.startsAt && !block.endsAt) {
-        const open = _pbClockHour(config.opensAt) ?? 6;
-        const close = String(config.closesAt || '').startsWith('00:00')
-          ? 24
-          : (_pbClockHour(config.closesAt, true) ?? 24);
+        const { open, close } = _pbCourtOperatingHours(config);
         slots = Array.from({ length: Math.max(0, close - open) }, (_, index) => open + index);
       }
       if (!slots.length) continue;
@@ -1485,8 +1537,30 @@ window.DB = {
             _pbPlatformAvailability(opts.date),
             _pbPlatformBootstrap(),
           ]);
-          return _pbPlatformAvailabilityToLegacyBookings(availability, bootstrap)
-            .filter(row => !opts.courtId || String(row.courtId) === String(opts.courtId));
+          const sameDayRows = _pbPlatformAvailabilityToLegacyBookings(availability, bootstrap);
+          const relevantCourts = (bootstrap?.courts || [])
+            .filter(court => !opts.courtId || String(court.id) === String(opts.courtId));
+          const hasOvernightHours = relevantCourts.some(court => _pbCourtOperatingHours(court).close > 24);
+          let rows = sameDayRows;
+          if (hasOvernightHours) {
+            const nextDate = _pbAddCalendarDays(opts.date, 1);
+            const nextAvailability = await _pbPlatformAvailability(nextDate);
+            _pbMirrorOvernightBlockedHours(nextDate, opts.date, bootstrap);
+            const overnightRows = _pbPlatformAvailabilityToLegacyBookings(nextAvailability, bootstrap)
+              .map(row => {
+                const court = relevantCourts.find(item => String(item.id) === String(row.courtId));
+                if (!court) return null;
+                const overnightLimit = Math.max(0, _pbCourtOperatingHours(court).close - 24);
+                const slots = (row.slots || [])
+                  .map(Number)
+                  .filter(hour => Number.isInteger(hour) && hour < overnightLimit)
+                  .map(hour => hour + 24);
+                return slots.length ? { ...row, date: opts.date, slots } : null;
+              })
+              .filter(Boolean);
+            rows = [...sameDayRows, ...overnightRows];
+          }
+          return rows.filter(row => !opts.courtId || String(row.courtId) === String(opts.courtId));
         }
 
         const session = await _pbAuthenticatedSession();
@@ -1571,6 +1645,42 @@ window.DB = {
     }
     if (error) { console.error('addBooking:', error); throw error; }
     _pbClearFastCache(['bookings']);
+  },
+
+  async createManualBooking(payload) {
+    if (!PB_PLATFORM_V1) {
+      const error = new Error('Protected manual booking is available only on the tenant platform.');
+      error.code = 'PLATFORM_MANUAL_BOOKING_REQUIRED';
+      throw error;
+    }
+    const session = await _pbAuthenticatedSession();
+    const role = String(window.Auth?.getSession?.()?.role || '').toLowerCase();
+    if (!session || !['owner', 'court_owner'].includes(role)) {
+      const error = new Error('Only a System Owner or Court Owner can create manual bookings.');
+      error.code = 'MANUAL_BOOKING_ACCESS_DENIED';
+      throw error;
+    }
+    const startMatch = /^(\d{1,2}):00$/.exec(String(payload?.startTime || ''));
+    const startHour = startMatch ? Number(startMatch[1]) : 0;
+    const startDayOffset = Math.floor(startHour / 24);
+    const normalizedPayload = {
+      ...payload,
+      bookingDate: _pbAddCalendarDays(String(payload?.bookingDate || ''), startDayOffset),
+      startTime: `${String(((startHour % 24) + 24) % 24).padStart(2, '0')}:00`,
+    };
+    const result = await _invokeEdgeFunction(
+      `create-manual-booking?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      {
+        ...normalizedPayload,
+        tenantSlug: PB_TENANT_SLUG,
+      },
+      { preferDirect: true },
+    );
+    if (!result?.ok || !result.booking) {
+      throw new Error('The manual booking service returned an invalid response.');
+    }
+    _pbClearFastCache(['bookings', 'platformAvailability']);
+    return result.booking;
   },
 
   async getBookingByRef(ref) {
@@ -2474,7 +2584,8 @@ window.DB = {
         if (key === 'open_hour') nextCourt.opensAt = `${String(Number(value)).padStart(2, '0')}:00`;
         if (key === 'close_hour') {
           const closeHour = Number(value);
-          nextCourt.closesAt = closeHour === 24 ? '00:00' : `${String(closeHour).padStart(2, '0')}:00`;
+          const clockHour = ((closeHour % 24) + 24) % 24;
+          nextCourt.closesAt = `${String(clockHour).padStart(2, '0')}:00`;
         }
         if (key === 'pricing_tiers') {
           let tiers;
@@ -2702,11 +2813,14 @@ window.DB = {
       .map(value => String(value || '').trim())
       .filter(Boolean)
       .join(' - ') || null;
+    const startSlot = slots[0];
+    const startDayOffset = Math.floor(startSlot / 24);
+    const startClockHour = ((startSlot % 24) + 24) % 24;
     const payload = {
       tenantSlug: PB_TENANT_SLUG,
       courtId: String(booking.courtId),
-      bookingDate: String(booking.date),
-      startTime: `${String(slots[0]).padStart(2, '0')}:00`,
+      bookingDate: _pbAddCalendarDays(String(booking.date), startDayOffset),
+      startTime: `${String(startClockHour).padStart(2, '0')}:00`,
       durationHours: slots.length,
       bookingType: booking.bookingType === 'event' ? 'event' : 'regular',
       customer: {

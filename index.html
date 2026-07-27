@@ -4980,7 +4980,10 @@ let paymentWatch = { ref: null, timer: null, tries: 0 };
    ============================================= */
 const $ = id => document.getElementById(id);
 const fmt = n => '₱' + Number(n).toLocaleString('en-PH', {minimumFractionDigits:2});
-const fmtT = h => h === 24 ? '12:00 AM' : `${h % 12 || 12}:00 ${h < 12 ? 'AM' : 'PM'}`;
+const fmtT = h => {
+  const normalized = ((Number(h) % 24) + 24) % 24;
+  return `${normalized % 12 || 12}:00 ${normalized < 12 ? 'AM' : 'PM'}`;
+};
 const fmtD = s => {
   if (!s) return '—';
   return new Date(s + 'T00:00:00').toLocaleDateString('en-PH', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
@@ -5580,10 +5583,11 @@ function getRateForHour(h) {
 
 function getRateForHourFromTiers(h, tiers, fallbackRate = 0) {
   const configuredTiers = Array.isArray(tiers) ? tiers : [];
+  const clockHour = ((Number(h) % 24) + 24) % 24;
   const matches = configuredTiers.filter(t => {
     const inRange = t.from < t.to
-      ? (h >= t.from && h < t.to)
-      : (h >= t.from || h < t.to);
+      ? (clockHour >= t.from && clockHour < t.to)
+      : (clockHour >= t.from || clockHour < t.to);
     return inRange && Number(t.rate) > 0;
   });
   // Never invent a price when configured tiers contain a gap or overlap. The
@@ -5599,9 +5603,15 @@ function getPricingTiersForCourt(c) {
   return [{ from: openHour, to: closeHour, rate: c.rate }];
 }
 
-const fmtTs = h => h === 24 ? '12A' : `${h % 12 || 12}${h < 12 ? 'A' : 'P'}`;
+const fmtTs = h => {
+  const normalized = ((Number(h) % 24) + 24) % 24;
+  return `${normalized % 12 || 12}${normalized < 12 ? 'A' : 'P'}`;
+};
 /* compact range label for mobile, e.g. 6AM–7AM / 11AM–12PM */
-const fmtTc = h => h === 24 ? '12AM' : `${h % 12 || 12}${h < 12 ? 'AM' : 'PM'}`;
+const fmtTc = h => {
+  const normalized = ((Number(h) % 24) + 24) % 24;
+  return `${normalized % 12 || 12}${normalized < 12 ? 'AM' : 'PM'}`;
+};
 const slotTimeLabel = h => `<span class="t-full">${fmtT(h)} – ${fmtT(h+1)}</span><span class="t-compact">${fmtTc(h)}–${fmtTc(h+1)}</span>`;
 
 /* =============================================
@@ -10037,7 +10047,7 @@ async function submitOpenPlay() {
 </script>
 <script src="supabase.min.js"></script>
 <script src="tenant-config.js?v=20260720-court-status-v4"></script>
-<script src="supabase-config.js?v=20260723-protected-reschedule-v2"></script>
+<script src="supabase-config.js?v=20260727-overnight-hours-v1"></script>
 
 <!-- MOBILE STICKY BOOK NOW BAR -->
 <div id="mobileBookBar" class="mobile-book-bar" style="display:none">
