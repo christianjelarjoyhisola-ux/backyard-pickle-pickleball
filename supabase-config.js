@@ -291,19 +291,49 @@ async function _pbAuthenticatedSession() {
   return data?.session || null;
 }
 
-function _pbZonedHour(timestamp, timeZone) {
+function _pbZonedDateHour(timestamp, timeZone) {
   if (!timestamp) return null;
   try {
     const parts = new Intl.DateTimeFormat('en-GB', {
       timeZone: timeZone || 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
       hour: '2-digit',
       hourCycle: 'h23',
     }).formatToParts(new Date(timestamp));
+    const year = parts.find(part => part.type === 'year')?.value;
+    const month = parts.find(part => part.type === 'month')?.value;
+    const day = parts.find(part => part.type === 'day')?.value;
     const hour = Number(parts.find(part => part.type === 'hour')?.value);
-    return Number.isInteger(hour) ? hour : null;
+    if (!year || !month || !day || !Number.isInteger(hour)) return null;
+    return { date: `${year}-${month}-${day}`, hour };
   } catch (_) {
     return null;
   }
+}
+
+function _pbZonedHour(timestamp, timeZone) {
+  return _pbZonedDateHour(timestamp, timeZone)?.hour ?? null;
+}
+
+function _pbCalendarDayOffset(anchorDate, targetDate) {
+  const parse = value => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    return match
+      ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+      : null;
+  };
+  const anchor = parse(anchorDate);
+  const target = parse(targetDate);
+  if (!Number.isFinite(anchor) || !Number.isFinite(target)) return 0;
+  return Math.round((target - anchor) / 86400000);
+}
+
+function _pbExtendedZonedHour(timestamp, anchorDate, timeZone) {
+  const local = _pbZonedDateHour(timestamp, timeZone);
+  if (!local) return null;
+  return local.hour + (_pbCalendarDayOffset(anchorDate, local.date) * 24);
 }
 
 function _pbPlatformRescheduleEventToLegacy(event) {
@@ -385,12 +415,17 @@ function _pbPlatformBookingToLegacy(row, courtMap, timeZone) {
       : [];
   const startsAt = row.starts_at || row.startsAt;
   const endsAt = row.ends_at || row.endsAt;
+  const zonedStart = _pbZonedDateHour(startsAt, timeZone);
+  const bookingDate = row.local_booking_date || row.localBookingDate || zonedStart?.date || String(startsAt || '').slice(0, 10);
+  // Keep next-day hours as 24+ relative to the booking date. Reducing every
+  // slot to a clock hour turns 11 PM-1 AM into [23, 0], which sorts as [0, 23].
   const slots = bookingSlots
     .filter(slot => ['held', 'confirmed'].includes(slot.status))
-    .map(slot => _pbZonedHour(slot.starts_at || slot.startsAt, timeZone))
+    .map(slot => _pbExtendedZonedHour(slot.starts_at || slot.startsAt, bookingDate, timeZone))
     .filter(Number.isInteger)
     .sort((a, b) => a - b);
-  const fallbackStart = _pbZonedHour(startsAt, timeZone);
+  const fallbackStart = _pbExtendedZonedHour(startsAt, bookingDate, timeZone);
+  const fallbackEnd = _pbExtendedZonedHour(endsAt, bookingDate, timeZone);
   const calculatedDuration = Math.round((new Date(endsAt) - new Date(startsAt)) / 3600000);
   const declaredDuration = Number(row.durationHours ?? row.duration_hours ?? row.duration);
   const duration = Number.isFinite(calculatedDuration) && calculatedDuration > 0
@@ -399,8 +434,14 @@ function _pbPlatformBookingToLegacy(row, courtMap, timeZone) {
       ? declaredDuration
       : 1;
   if (!slots.length && Number.isInteger(fallbackStart)) {
-    for (let index = 0; index < duration; index++) slots.push((fallbackStart + index) % 24);
+    for (let index = 0; index < duration; index++) slots.push(fallbackStart + index);
   }
+  const rangeStart = Number.isInteger(fallbackStart) ? fallbackStart : slots[0];
+  const rangeEnd = Number.isInteger(fallbackEnd) && fallbackEnd > rangeStart
+    ? fallbackEnd
+    : slots.length
+      ? slots[slots.length - 1] + 1
+      : null;
   const rawStatus = row.status;
   const status = {
     pending_payment: 'verifying',
@@ -454,11 +495,13 @@ function _pbPlatformBookingToLegacy(row, courtMap, timeZone) {
     email: row.customer_email || row.customerEmail || row.email,
     courtId,
     courtName: court?.name || row.courtName || row.court_name || 'Court',
-    date: row.local_booking_date || row.localBookingDate || String(startsAt || '').slice(0, 10),
+    date: bookingDate,
     slots,
-    startTime: slots.length ? _fmtBookingHour(slots[0]) : '',
-    endTime: slots.length ? _fmtBookingHour(slots[slots.length - 1] + 1) : '',
-    timeLabel: _bookingSlotsTimeLabel(slots),
+    startTime: Number.isInteger(rangeStart) ? _fmtBookingHour(rangeStart) : '',
+    endTime: Number.isInteger(rangeEnd) ? _fmtBookingHour(rangeEnd) : '',
+    timeLabel: Number.isInteger(rangeStart) && Number.isInteger(rangeEnd)
+      ? `${_fmtBookingHour(rangeStart)} - ${_fmtBookingHour(rangeEnd)}`
+      : _bookingSlotsTimeLabel(slots),
     duration,
     rate: Number(row.subtotal_amount ?? row.subtotalAmount ?? row.courtFee ?? 0) / duration,
     total: Number(row.total_amount ?? row.totalAmount ?? row.total ?? 0),

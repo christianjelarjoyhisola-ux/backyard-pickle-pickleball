@@ -91,6 +91,8 @@ test('protected DTO mapping accepts camel and database rows', () => {
   const context = {};
   vm.runInNewContext(`
     function _pbZonedHour() { return 10; }
+    function _pbZonedDateHour() { return { date: '2026-07-23', hour: 10 }; }
+    function _pbExtendedZonedHour() { return 10; }
     function _fmtBookingHour(hour) { return String(hour).padStart(2, '0') + ':00'; }
     function _bookingSlotsTimeLabel() { return ''; }
     ${data.slice(start, end)}
@@ -138,7 +140,7 @@ test('protected DTO mapping accepts camel and database rows', () => {
 
 test('every entry page loads the same protected reschedule client version', () => {
   for (const file of ['index.html', 'admin.html', 'login.html', 'host.html']) {
-    assert.match(read(file), /supabase-config\.js\?v=20260727-overnight-hours-v1/);
+    assert.match(read(file), /supabase-config\.js\?v=20260803-midnight-range-v2/);
   }
 });
 

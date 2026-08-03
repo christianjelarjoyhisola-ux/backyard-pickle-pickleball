@@ -69,3 +69,39 @@ test('after-midnight slots use the matching early-morning pricing tier', () => {
   assert.equal(context.getRateForHourFromTiers(24, tiers), 300);
   assert.equal(context.getRateForHourFromTiers(26, tiers), 300);
 });
+
+test('platform booking ranges stay chronological when they cross midnight', () => {
+  const context = {};
+  vm.runInNewContext(
+    `${functionSource(dataLayer, '_pbZonedDateHour')}
+     ${functionSource(dataLayer, '_pbZonedHour')}
+     ${functionSource(dataLayer, '_pbCalendarDayOffset')}
+     ${functionSource(dataLayer, '_pbExtendedZonedHour')}
+     ${functionSource(dataLayer, '_fmtBookingHour')}
+     ${functionSource(dataLayer, '_bookingSlotsTimeLabel')}
+     function _pbPlatformRescheduleEventToLegacy(value) { return value; }
+     ${functionSource(dataLayer, '_pbPlatformBookingToLegacy')}
+     result = _pbPlatformBookingToLegacy({
+       reference: 'PB-MIDNIGHT',
+       local_booking_date: '2026-08-02',
+       starts_at: '2026-08-02T15:00:00Z',
+       ends_at: '2026-08-02T17:00:00Z',
+       status: 'confirmed',
+       payment_status: 'paid',
+       total_amount: 904,
+       booking_slots: [
+         { status: 'confirmed', starts_at: '2026-08-02T15:00:00Z' },
+         { status: 'confirmed', starts_at: '2026-08-02T16:00:00Z' },
+       ],
+     }, new Map(), 'Asia/Manila');`,
+    context,
+  );
+
+  const result = JSON.parse(JSON.stringify(context.result));
+  assert.deepEqual(result.slots, [23, 24]);
+  assert.equal(result.startTime, '11:00 PM');
+  assert.equal(result.endTime, '1:00 AM');
+  assert.equal(result.timeLabel, '11:00 PM - 1:00 AM');
+  assert.equal(result.duration, 2);
+  assert.equal(result.total, 904);
+});
