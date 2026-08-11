@@ -467,6 +467,13 @@ function _pbPlatformBookingToLegacy(row, courtMap, timeZone) {
       ? [...row.receiptVerifications].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
       : [];
   const receipt = receipts[0] || null;
+  const receiptImageValue = receipt?.receipt_image_url
+    || receipt?.receiptImageUrl
+    || receipt?.storage_path
+    || receipt?.storagePath
+    || null;
+  const receiptImageAvailable = receipt?.image_available === true
+    || receipt?.imageAvailable === true;
   const paymentSessions = Array.isArray(row.payment_sessions)
     ? [...row.payment_sessions].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
     : Array.isArray(row.paymentSessions)
@@ -521,7 +528,9 @@ function _pbPlatformBookingToLegacy(row, courtMap, timeZone) {
     receiptVerificationId: receipt?.id || null,
     // The source image stays private. This sentinel only tells the dashboard
     // that an authenticated, short-lived viewing URL can be requested.
-    receiptImageUrl: receipt?.storage_path ? 'protected' : null,
+    receiptImageUrl: receiptImageValue
+      ? (String(receiptImageValue).startsWith('http') ? receiptImageValue : 'protected')
+      : (receiptImageAvailable ? 'protected' : null),
     receiptStatus: receipt?.status || 'none',
     receiptFlags: receipt?.flags || [],
     receiptExtracted: receipt?.extracted_data || null,
@@ -1100,6 +1109,17 @@ function _bookingSlotsTimeLabel(slots, fallbackStart = '', fallbackEnd = '') {
 
 function rowToBooking(r) {
   const slots = r.slots || [];
+  const receiptImageValue = r.receipt_image_url
+    || r.receiptImageUrl
+    || r.receipt_storage_path
+    || r.receiptStoragePath
+    || r.storage_path
+    || r.storagePath
+    || null;
+  const receiptImageAvailable = r.receipt_image_available === true
+    || r.receiptImageAvailable === true
+    || r.image_available === true
+    || r.imageAvailable === true;
   return {
     ref:           r.ref,
     groupRef:      r.booking_group_ref || null,
@@ -1146,7 +1166,9 @@ function rowToBooking(r) {
     receiptFlags:      r.receipt_flags || [],
     receiptExtracted:  r.receipt_extracted || null,
     receiptConfidence: r.receipt_confidence != null ? Number(r.receipt_confidence) : null,
-    receiptImageUrl:   r.receipt_image_url || null,
+    receiptImageUrl:   receiptImageValue
+      ? (String(receiptImageValue).startsWith('http') ? receiptImageValue : 'protected')
+      : (receiptImageAvailable ? 'protected' : null),
     receiptVerifiedAt: r.receipt_verified_at || null,
     billedAt:      r.billed_at || null,
     weeklyFeeId:   r.weekly_fee_id || null,
@@ -3146,17 +3168,21 @@ window.DB = {
   },
 
   // Request a short-lived signed URL to view a stored receipt (admin only).
-  async getReceiptSignedUrl(bookingRef) {
+  async getReceiptSignedUrl(bookingRef, receiptVerificationId = '') {
     if (PB_PLATFORM_V1) {
-      const booking = await this.getBookingByRef(bookingRef);
-      if (!booking?.receiptVerificationId || !booking?.receiptImageUrl) {
+      let verificationId = String(receiptVerificationId || '').trim();
+      if (!verificationId) {
+        const booking = await this.getBookingByRef(bookingRef);
+        verificationId = String(booking?.receiptVerificationId || '').trim();
+      }
+      if (!verificationId) {
         throw new Error('No receipt image is attached to this booking.');
       }
       const result = await _invokeEdgeFunction(
         `get-receipt-view-url?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
         {
           tenantSlug: PB_TENANT_SLUG,
-          verificationId: booking.receiptVerificationId,
+          verificationId,
         },
         { preferDirect: true }
       );

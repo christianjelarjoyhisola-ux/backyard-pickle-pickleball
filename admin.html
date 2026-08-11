@@ -3473,6 +3473,10 @@ function groupBookings(bookings = []) {
     const allItems = sortBookingsChronologically(rawItems);
     const items = uniqueBookingGroupItems(allItems);
     const primary = items[0] || {};
+    const receiptItem = items.find(b => b.receiptImageUrl)
+      || items.find(b => b.receiptVerificationId)
+      || items.find(b => b.receiptStatus && b.receiptStatus !== 'none')
+      || primary;
     const refs = allItems.map(b => b.ref).filter(Boolean);
     const total = items.reduce((sum, b) => sum + (Number(b.total) || 0), 0);
     const downpayment = items.reduce((sum, b) => {
@@ -3514,10 +3518,12 @@ function groupBookings(bookings = []) {
       createdByEmail: commonValue(items, 'createdByEmail', primary.createdByEmail || null),
       receiptStatus: bookingGroupReceiptStatus(items),
       receiptFlags,
-      receiptExtracted: items.find(b => b.receiptExtracted)?.receiptExtracted || primary.receiptExtracted,
-      receiptConfidence: primary.receiptConfidence,
-      receiptImageUrl: primary.receiptImageUrl,
-      receiptVerifiedAt: primary.receiptVerifiedAt,
+      receiptExtracted: receiptItem.receiptExtracted || items.find(b => b.receiptExtracted)?.receiptExtracted || primary.receiptExtracted,
+      receiptConfidence: receiptItem.receiptConfidence ?? primary.receiptConfidence,
+      receiptVerificationId: receiptItem.receiptVerificationId || primary.receiptVerificationId,
+      receiptImageUrl: receiptItem.receiptImageUrl || primary.receiptImageUrl,
+      receiptSourceRef: receiptItem.ref || primary.ref,
+      receiptVerifiedAt: receiptItem.receiptVerifiedAt || primary.receiptVerifiedAt,
       createdAt: items.map(b => b.createdAt || b.created_at).filter(Boolean).sort()[0] || primary.createdAt || primary.created_at,
       duration: items.reduce((sum, b) => sum + (Number(b.duration) || 0), 0),
     };
@@ -5341,7 +5347,8 @@ async function vmPopulateReceipt(b){
   const wrap = $('vmReceiptWrap');
   const s = b.receiptStatus || 'none';
   const displayFlags = receiptFlagsForDisplay(b);
-  if (s === 'none' && !b.receiptImageUrl) { if (wrap) wrap.style.display = 'none'; return; }
+  const canRequestProtectedImage = !!(b.receiptVerificationId || b.receiptImageUrl);
+  if (s === 'none' && !canRequestProtectedImage) { if (wrap) wrap.style.display = 'none'; return; }
   if (wrap) wrap.style.display = '';
   const st = $('vmReceiptStatus');
   const map = {
@@ -5363,12 +5370,30 @@ async function vmPopulateReceipt(b){
   const link = $('vmReceiptLink'), img = $('vmReceiptImg'), noImg = $('vmReceiptNoImg');
   if (link) link.style.display = 'none';
   if (noImg) noImg.style.display = 'none';
-  if (b.receiptImageUrl) {
+  if (img) {
+    img.onload = null;
+    img.onerror = null;
+    img.removeAttribute('src');
+  }
+  if (canRequestProtectedImage) {
     try {
-      const url = await DB.getReceiptSignedUrl(b.ref);
-      if (img) img.src = url;
+      const url = await DB.getReceiptSignedUrl(
+        b.receiptSourceRef || b.ref,
+        b.receiptVerificationId
+      );
+      if (img) {
+        img.onerror = () => {
+          if (link) link.style.display = 'none';
+          if (noImg) {
+            noImg.style.display = '';
+            noImg.textContent = 'Could not load receipt image.';
+          }
+        };
+        img.src = url;
+      }
       if (link) { link.href = url; link.style.display = ''; }
     } catch(e) {
+      console.error('Receipt image load failed:', e);
       if (noImg) { noImg.style.display = ''; noImg.textContent = 'Could not load receipt image.'; }
     }
   } else if (noImg) {
