@@ -8251,7 +8251,6 @@ async function savePlatformActivationSettings() {
     toast(`${incompleteMethod.displayName} needs both the account name and account number.`, 'err');
     return;
   }
-  if (!(await ensureReceiptMfa(savePlatformActivationSettings))) return;
   const button = $('savePlatformActivationBtn');
   button.disabled = true;
   button.textContent = 'Saving...';
