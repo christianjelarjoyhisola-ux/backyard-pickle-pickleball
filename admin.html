@@ -2976,6 +2976,15 @@ tr:hover td { background: var(--bg2); }
         <p class="mbx-help">Only available one-hour slots can be selected.</p>
 
         <div class="mbx-field">
+          <label for="mbxBookingType">Booking type</label>
+          <select class="fi mbx-input" id="mbxBookingType" onchange="mbxBookingTypeChanged()">
+            <option value="regular">Court booking</option>
+            <option value="event">Event booking</option>
+          </select>
+          <div class="mbx-availability-note" id="mbxBookingTypeNote">Uses the court's regular hourly price.</div>
+        </div>
+
+        <div class="mbx-field">
           <label for="mbxDate">Date</label>
           <input class="fi mbx-input" id="mbxDate" type="date" onchange="mbxLoadAvailability()" />
         </div>
@@ -3473,6 +3482,10 @@ function groupBookings(bookings = []) {
     const allItems = sortBookingsChronologically(rawItems);
     const items = uniqueBookingGroupItems(allItems);
     const primary = items[0] || {};
+    const receiptItem = items.find(b => b.receiptImageUrl)
+      || items.find(b => b.receiptVerificationId)
+      || items.find(b => b.receiptStatus && b.receiptStatus !== 'none')
+      || primary;
     const refs = allItems.map(b => b.ref).filter(Boolean);
     const total = items.reduce((sum, b) => sum + (Number(b.total) || 0), 0);
     const downpayment = items.reduce((sum, b) => {
@@ -3514,10 +3527,12 @@ function groupBookings(bookings = []) {
       createdByEmail: commonValue(items, 'createdByEmail', primary.createdByEmail || null),
       receiptStatus: bookingGroupReceiptStatus(items),
       receiptFlags,
-      receiptExtracted: items.find(b => b.receiptExtracted)?.receiptExtracted || primary.receiptExtracted,
-      receiptConfidence: primary.receiptConfidence,
-      receiptImageUrl: primary.receiptImageUrl,
-      receiptVerifiedAt: primary.receiptVerifiedAt,
+      receiptExtracted: receiptItem.receiptExtracted || items.find(b => b.receiptExtracted)?.receiptExtracted || primary.receiptExtracted,
+      receiptConfidence: receiptItem.receiptConfidence ?? primary.receiptConfidence,
+      receiptVerificationId: receiptItem.receiptVerificationId || primary.receiptVerificationId,
+      receiptImageUrl: receiptItem.receiptImageUrl || primary.receiptImageUrl,
+      receiptSourceRef: receiptItem.ref || primary.ref,
+      receiptVerifiedAt: receiptItem.receiptVerifiedAt || primary.receiptVerifiedAt,
       createdAt: items.map(b => b.createdAt || b.created_at).filter(Boolean).sort()[0] || primary.createdAt || primary.created_at,
       duration: items.reduce((sum, b) => sum + (Number(b.duration) || 0), 0),
     };
@@ -5341,7 +5356,8 @@ async function vmPopulateReceipt(b){
   const wrap = $('vmReceiptWrap');
   const s = b.receiptStatus || 'none';
   const displayFlags = receiptFlagsForDisplay(b);
-  if (s === 'none' && !b.receiptImageUrl) { if (wrap) wrap.style.display = 'none'; return; }
+  const canRequestProtectedImage = !!(b.receiptVerificationId || b.receiptImageUrl);
+  if (s === 'none' && !canRequestProtectedImage) { if (wrap) wrap.style.display = 'none'; return; }
   if (wrap) wrap.style.display = '';
   const st = $('vmReceiptStatus');
   const map = {
@@ -5363,12 +5379,30 @@ async function vmPopulateReceipt(b){
   const link = $('vmReceiptLink'), img = $('vmReceiptImg'), noImg = $('vmReceiptNoImg');
   if (link) link.style.display = 'none';
   if (noImg) noImg.style.display = 'none';
-  if (b.receiptImageUrl) {
+  if (img) {
+    img.onload = null;
+    img.onerror = null;
+    img.removeAttribute('src');
+  }
+  if (canRequestProtectedImage) {
     try {
-      const url = await DB.getReceiptSignedUrl(b.ref);
-      if (img) img.src = url;
+      const url = await DB.getReceiptSignedUrl(
+        b.receiptSourceRef || b.ref,
+        b.receiptVerificationId
+      );
+      if (img) {
+        img.onerror = () => {
+          if (link) link.style.display = 'none';
+          if (noImg) {
+            noImg.style.display = '';
+            noImg.textContent = 'Could not load receipt image.';
+          }
+        };
+        img.src = url;
+      }
       if (link) { link.href = url; link.style.display = ''; }
     } catch(e) {
+      console.error('Receipt image load failed:', e);
       if (noImg) { noImg.style.display = ''; noImg.textContent = 'Could not load receipt image.'; }
     }
   } else if (noImg) {
@@ -6337,6 +6371,7 @@ async function calOpenBookingSlot(dateStr, courtId, hour) {
    ============================================== */
 const _mbxState = {
   step: 1,
+  bookingType: 'regular',
   courts: [],
   courtId: '',
   date: '',
@@ -6394,7 +6429,21 @@ function mbxCourt() {
   return _mbxState.courts.find(court => String(court.id) === String(_mbxState.courtId)) || null;
 }
 
+function mbxEventConfig(court) {
+  const config = court?.pricingConfig?.event;
+  return config && typeof config === 'object' ? config : {};
+}
+
+function mbxCourtSupportsType(court, bookingType = _mbxState.bookingType) {
+  if (bookingType !== 'event') return true;
+  const event = mbxEventConfig(court);
+  return event.enabled === true && Number.isFinite(Number(event.hourlyRate)) && Number(event.hourlyRate) > 0;
+}
+
 function mbxRateForHour(court, hour) {
+  if (_mbxState.bookingType === 'event') {
+    return Number(mbxEventConfig(court).hourlyRate || 0);
+  }
   const bands = Array.isArray(court?.rateSchedule) ? court.rateSchedule : [];
   const clockHour = ((Number(hour) % 24) + 24) % 24;
   const matching = bands.find(band => {
@@ -6409,6 +6458,16 @@ function mbxQuote() {
   const court = mbxCourt();
   const hours = [..._mbxState.selectedHours].sort((a, b) => a - b);
   const subtotal = Math.round(hours.reduce((sum, hour) => sum + mbxRateForHour(court, hour), 0) * 100) / 100;
+  const pricingSection = _mbxState.bookingType === 'event'
+    ? mbxEventConfig(court)
+    : (court?.pricingConfig?.regular || {});
+  const minimumHours = Math.max(1, Number(pricingSection.minimumHours || 1));
+  const maximumHours = Math.max(minimumHours, Number(pricingSection.maximumHours || 18));
+  const selectionError = hours.length && hours.length < minimumHours
+    ? `Select at least ${minimumHours} consecutive hours for this ${_mbxState.bookingType === 'event' ? 'event' : 'booking'}.`
+    : hours.length > maximumHours
+      ? `Select no more than ${maximumHours} consecutive hours.`
+      : '';
   const billing = _mbxState.activation?.billing || {};
   const amount = Number(billing.feeAmount || 0);
   const mode = String(billing.feeMode || 'fixed_per_hour');
@@ -6425,7 +6484,24 @@ function mbxQuote() {
     duration: hours.length,
     startHour: hours.length ? Math.min(...hours) : null,
     endHour: hours.length ? Math.max(...hours) + 1 : null,
+    minimumHours,
+    maximumHours,
+    selectionError,
   };
+}
+
+async function mbxBookingTypeChanged() {
+  if (_mbxState.loading || _mbxState.saving) return;
+  const select = $('mbxBookingType');
+  _mbxState.bookingType = select?.value === 'event' ? 'event' : 'regular';
+  if (!mbxCourtSupportsType(mbxCourt())) {
+    const supportedCourt = _mbxState.courts.find(court => mbxCourtSupportsType(court));
+    _mbxState.courtId = String(supportedCourt?.id || '');
+  }
+  _mbxState.selectedHours = [];
+  _mbxState.prefillHour = null;
+  mbxRenderCourts();
+  await mbxLoadAvailability();
 }
 
 function mbxPaymentOptions() {
@@ -6497,8 +6573,12 @@ function mbxRenderCourts() {
   }
   container.innerHTML = _mbxState.courts.map(court => {
     const active = String(court.id) === String(_mbxState.courtId);
-    return `<button class="mbx-court ${active ? 'active' : ''}" type="button" aria-pressed="${active}" onclick="mbxSelectCourt('${jsArg(court.id)}')">
-      <strong>${esc(court.name)}</strong><span>from ${fmt(court.rate)}/hr</span>
+    const supported = mbxCourtSupportsType(court);
+    const rate = _mbxState.bookingType === 'event'
+      ? Number(mbxEventConfig(court).hourlyRate || 0)
+      : Number(court.rate || 0);
+    return `<button class="mbx-court ${active ? 'active' : ''}" type="button" aria-pressed="${active}" ${supported ? '' : 'disabled'} onclick="mbxSelectCourt('${jsArg(court.id)}')">
+      <strong>${esc(court.name)}</strong><span>${supported ? `from ${fmt(rate)}/hr` : 'Events unavailable'}</span>
     </button>`;
   }).join('');
 }
@@ -6532,6 +6612,9 @@ function mbxRenderTimes() {
   const container = $('mbxTimes');
   if (!court || !_mbxState.date) {
     container.innerHTML = '';
+    if (_mbxState.bookingType === 'event' && !_mbxState.courts.some(item => mbxCourtSupportsType(item))) {
+      $('mbxAvailabilityNote').textContent = 'Event pricing is not configured for an active court.';
+    }
     return;
   }
   const openHour = mbxClockHour(court.opensAt ?? court.opens_at) ?? 6;
@@ -6554,12 +6637,18 @@ function mbxRenderTimes() {
   container.innerHTML = html || '<div class="mbx-availability-note">No bookable hours are configured.</div>';
   $('mbxAvailabilityNote').textContent = _mbxState.loading
     ? 'Refreshing availability...'
-    : `${available} available hour${available === 1 ? '' : 's'} for ${court.name}`;
+    : `${available} available hour${available === 1 ? '' : 's'} for ${court.name}${_mbxState.bookingType === 'event' ? ` (${mbxQuote().minimumHours}-hour minimum)` : ''}`;
   const quote = mbxQuote();
   const selectedDate = _mbxState.date
     ? new Date(`${_mbxState.date}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
     : '';
   $('mbxScheduleSelection').hidden = !quote.duration;
+  const typeNote = $('mbxBookingTypeNote');
+  if (typeNote) {
+    typeNote.textContent = _mbxState.bookingType === 'event'
+      ? `Uses the event rate of ${fmt(mbxEventConfig(court).hourlyRate || 0)}/hour with a ${quote.minimumHours}-hour minimum.`
+      : "Uses the court's regular hourly price.";
+  }
   $('mbxScheduleSelectionText').textContent = quote.duration
     ? `${selectedDate} · ${court.name} · ${mbxSlotHour(quote.startHour)}-${mbxSlotHour(quote.endHour)}`
     : '';
@@ -6644,9 +6733,11 @@ function mbxRenderSummary() {
       <strong>${esc(court.name)} · ${fmtHour(quote.startHour)} – ${fmtHour(quote.endHour)}</strong>
       <span>${esc(dateLabel)} · ${quote.duration} hour${quote.duration === 1 ? '' : 's'}</span>
     </div>
-    <div class="mbx-summary-row"><span>Court fee</span><strong>${fmt(quote.subtotal)}</strong></div>
+    <div class="mbx-summary-row"><span>Booking type</span><strong>${_mbxState.bookingType === 'event' ? 'Event booking' : 'Court booking'}</strong></div>
+    <div class="mbx-summary-row"><span>${_mbxState.bookingType === 'event' ? 'Event court fee' : 'Court fee'}</span><strong>${fmt(quote.subtotal)}</strong></div>
     <div class="mbx-summary-row"><span>Booking fee</span><strong>${fmt(quote.bookingFee)}</strong></div>
-    <div class="mbx-summary-row total"><span>Total paid</span><strong>${fmt(quote.total)}</strong></div>`;
+    <div class="mbx-summary-row total"><span>Total paid</span><strong>${fmt(quote.total)}</strong></div>
+    ${quote.selectionError ? `<div class="mbx-error" style="display:block">${esc(quote.selectionError)}</div>` : ''}`;
   $('mbxPaidConfirmationTitle').textContent = `${fmt(quote.total)} received in full`;
 }
 
@@ -6678,13 +6769,15 @@ function mbxCustomerValid({ showErrors = false } = {}) {
 }
 
 function mbxUpdateActions() {
-  const hasSchedule = _mbxState.selectedHours.length > 0 && !_mbxState.loading;
+  const quote = mbxQuote();
+  const hasSchedule = quote.duration > 0 && !quote.selectionError && !_mbxState.loading;
   $('mbxNextBtn').disabled = !hasSchedule;
   $('mbxCreateBtn').disabled = _mbxState.saving || !mbxCustomerValid();
 }
 
 function mbxNext() {
-  if (!_mbxState.selectedHours.length) return;
+  const quote = mbxQuote();
+  if (!quote.duration || quote.selectionError) return;
   mbxSetStep(2);
 }
 
@@ -6696,7 +6789,7 @@ function mbxBack() {
 async function mbxCreateBooking() {
   if (_mbxState.saving || !mbxCustomerValid({ showErrors: true })) return;
   const quote = mbxQuote();
-  if (!quote.duration || quote.startHour == null) return;
+  if (!quote.duration || quote.startHour == null || quote.selectionError) return;
   _mbxState.saving = true;
   mbxUpdateActions();
   const button = $('mbxCreateBtn');
@@ -6705,6 +6798,7 @@ async function mbxCreateBooking() {
   $('mbxError').hidden = true;
   try {
     const booking = await DB.createManualBooking({
+      bookingType: _mbxState.bookingType,
       courtId: _mbxState.courtId,
       bookingDate: _mbxState.date,
       startTime: `${String(quote.startHour).padStart(2, '0')}:00`,
@@ -6754,7 +6848,7 @@ function mbxShowSuccess(booking) {
   $('mbxSuccessFooter').hidden = false;
   $('mbxSubtitle').textContent = booking.emailSent
     ? 'Confirmation email sent to the customer.'
-    : 'The court is confirmed and full payment is recorded.';
+    : `${_mbxState.bookingType === 'event' ? 'The event' : 'The court'} is confirmed and full payment is recorded.`;
   $('mbxSuccessRef').textContent = booking.reference;
   const methodLabels = {
     cash: 'Cash', gcash: 'GCash', maya: 'Maya', bank_transfer: 'Bank transfer',
@@ -6797,6 +6891,7 @@ async function openManualBookingModal(prefill = {}) {
   const modal = $('manualBookingModal');
   _mbxState.lastFocus = document.activeElement;
   _mbxState.step = 1;
+  _mbxState.bookingType = prefill.bookingType === 'event' ? 'event' : 'regular';
   _mbxState.selectedHours = [];
   _mbxState.busyHours = new Set();
   _mbxState.requestId = mbxUuid();
@@ -6827,6 +6922,11 @@ async function openManualBookingModal(prefill = {}) {
     ]);
     _mbxState.courts = (courts || []).filter(court => !court.blocked);
     _mbxState.activation = activation || {};
+    const eventOption = $('mbxBookingType')?.querySelector('option[value="event"]');
+    const hasEventCourt = _mbxState.courts.some(court => mbxCourtSupportsType(court, 'event'));
+    if (eventOption) eventOption.disabled = !hasEventCourt;
+    if (_mbxState.bookingType === 'event' && !hasEventCourt) _mbxState.bookingType = 'regular';
+    $('mbxBookingType').value = _mbxState.bookingType;
     const requestedCourt = _mbxState.courts.find(court => String(court.id) === String(prefill.courtId));
     _mbxState.courtId = String(requestedCourt?.id || _mbxState.courts[0]?.id || '');
     const requestedDate = /^\d{4}-\d{2}-\d{2}$/.test(String(prefill.date || '')) ? String(prefill.date) : mbxToday();
