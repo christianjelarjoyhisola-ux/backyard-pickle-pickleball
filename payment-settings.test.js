@@ -8,6 +8,7 @@ const publicSite = fs.readFileSync('index.html', 'utf8');
 
 test('payment settings save account details before linking managed QR assets', () => {
   assert.match(admin, /const _platformPaymentQrChanges = new Map\(\)/);
+  assert.doesNotMatch(admin, /ensureReceiptMfa\(savePlatformActivationSettings\)/);
   assert.match(
     admin,
     /let savedActivation = await DB\.saveTenantActivationSettings[\s\S]*?await savePlatformPaymentQrChanges\(\)[\s\S]*?savedActivation = await DB\.saveTenantActivationSettings/,
