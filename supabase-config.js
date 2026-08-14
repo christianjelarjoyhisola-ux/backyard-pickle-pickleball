@@ -584,7 +584,13 @@ function _pbPlatformSettingsToLegacy(bootstrap) {
   for (const method of paymentConfigs) {
     const backendCode = String(method.code || '').toLowerCase();
     const uiCode = backendCode === 'bdo' ? 'bdopay' : backendCode;
-    if (uiCode) paymentCodeAliases[uiCode] = backendCode;
+    if (uiCode) {
+      paymentCodeAliases[uiCode] = backendCode;
+      settings[`payment_${uiCode}_account_reference`] = method.accountReference || '';
+      settings[`payment_${uiCode}_account_name`] = method.accountName || bootstrap?.tenant?.name || '';
+      settings[`payment_${uiCode}_qr_image`] = method.qrImageUrl || '';
+      settings[`payment_${uiCode}_instructions`] = method.instructions || '';
+    }
   }
   window.PB_PAYMENT_METHOD_CODES = Object.freeze(paymentCodeAliases);
   const publicMethods = paymentConfigs.length
@@ -594,9 +600,9 @@ function _pbPlatformSettingsToLegacy(bootstrap) {
       .filter(Boolean)
     : Array.isArray(settings['payment.public_methods'])
       ? settings['payment.public_methods'].map(value => String(value).toLowerCase())
-      : ['cash', 'gcash', 'bdopay', 'maya', 'bpi', 'gotyme', 'pnb']
+      : ['cash', 'gcash', 'bdopay', 'maya', 'bpi', 'maribank', 'gotyme', 'pnb']
         .filter(method => settings[`payment_method_${method}`] === '1');
-  for (const method of ['cash', 'gcash', 'bdopay', 'maya', 'bpi', 'gotyme', 'pnb']) {
+  for (const method of ['cash', 'gcash', 'bdopay', 'maya', 'bpi', 'maribank', 'gotyme', 'pnb']) {
     settings[`payment_method_${method}`] = publicMethods.includes(method) ? '1' : '0';
   }
   const configFor = (...codes) => paymentConfigs.find(method => codes.includes(String(method.code || '').toLowerCase()));
@@ -1071,7 +1077,7 @@ function _telegramBookingPayload(b, extras = {}) {
 // ROW ↔ JS OBJECT MAPPING
 // SQL uses snake_case; JS objects use camelCase
 // =============================================
-const PB_DIGITAL_PAYMENT_METHODS = ['gcash', 'bdopay', 'maya', 'bpi', 'gotyme', 'pnb'];
+const PB_DIGITAL_PAYMENT_METHODS = ['gcash', 'bdopay', 'maya', 'bpi', 'maribank', 'gotyme', 'pnb'];
 
 function normalizePaymentKey(value, fallback = '') {
   return String(value || fallback || '').toLowerCase().trim();
@@ -2663,7 +2669,7 @@ window.DB = {
         _pbClearFastCache(['courts', 'settings', 'platformBootstrap', 'platformAvailability']);
         return;
       }
-      const publicKey = /^(payment_method_(cash|gcash|bdopay|maya|bpi|gotyme|pnb)|payment_acceptance_mode|(gcash|gotyme|pnb)_merchant_(number|name)|(gcash|gotyme|pnb)_qr_image)$/.test(key);
+      const publicKey = /^(payment_method_(cash|gcash|bdopay|maya|bpi|maribank|gotyme|pnb)|payment_acceptance_mode|(gcash|gotyme|pnb|maribank)_merchant_(number|name)|(gcash|gotyme|pnb|maribank)_qr_image)$/.test(key);
       const { error } = await _sb.from('settings').upsert({
         tenant_id: tenantId,
         key,
@@ -2741,6 +2747,32 @@ window.DB = {
     }
     if (!result?.ok || !result?.asset?.url) throw new Error('The QR upload returned an invalid response.');
     return result.asset;
+  },
+
+  async deleteTenantPaymentQr({ methodCode }) {
+    if (!PB_PLATFORM_V1) throw new Error('Payment QR removal requires the platform backend.');
+    const code = String(methodCode || '').trim().toLowerCase();
+    if (!/^[a-z][a-z0-9_-]{1,39}$/.test(code)) throw new Error('The payment method is invalid.');
+    const response = await _pbFetchWithTimeout(
+      `${SUPABASE_URL.replace(/\/+$/, '')}/functions/v1/tenant-payment-asset?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      {
+        method: 'POST',
+        headers: await _authRestHeaders({
+          'X-Payment-Method': code,
+          'X-Asset-Action': 'delete',
+        }),
+      },
+      PB_RECEIPT_TIMEOUT_MS
+    );
+    const text = await response.text();
+    const result = _safeJsonParse(text) || {};
+    if (!response.ok) {
+      const failure = new Error(_pbApiErrorMessage(result, text, `Removal failed (HTTP ${response.status}).`));
+      failure.code = result?.error?.code || null;
+      throw failure;
+    }
+    if (!result?.ok) throw new Error('The QR removal returned an invalid response.');
+    return result;
   },
 
   async saveTenantPlatformBilling({ feeMode, feeAmount }) {
@@ -3699,6 +3731,7 @@ window.DB = {
     payment_method_bdopay: '1',
     payment_method_maya: '1',
     payment_method_bpi: '1',
+    payment_method_maribank: '0',
     payment_method_gotyme: '0',
     payment_method_pnb: '0',
     gcash_merchant_number: '09XXXXXXXXX',

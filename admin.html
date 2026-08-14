@@ -3387,7 +3387,7 @@ function bookingGroupKey(b) {
 }
 function normalizedPaymentRefKey(b) {
   const method = String(b?.paymentMethod || '').toLowerCase();
-  if (!['gcash', 'bdopay', 'maya', 'bpi', 'gotyme', 'pnb'].includes(method)) return '';
+  if (!['gcash', 'bdopay', 'maya', 'bpi', 'maribank', 'gotyme', 'pnb'].includes(method)) return '';
   const ref = String(b?.gcashRef || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   return ref ? `${method}:${ref}` : '';
 }
@@ -4745,11 +4745,11 @@ function clearFilters(){
 
 /* ── CALENDAR VIEW ── */
 function paymentMethodLabel(m) {
-  return ({ gcash: 'GCash', bdopay: 'BDO Pay', maya: 'Maya', bpi: 'BPI', gotyme: 'GoTyme', pnb: 'PNB', cash: 'Cash' }[String(m || '').toLowerCase()] || (m || 'Cash'));
+  return ({ gcash: 'GCash', bdopay: 'BDO Pay', maya: 'Maya', bpi: 'BPI', maribank: 'MariBank', gotyme: 'GoTyme', pnb: 'PNB', cash: 'Cash' }[String(m || '').toLowerCase()] || (m || 'Cash'));
 }
 
 function isDigitalPayment(m) {
-  return ['gcash', 'bdopay', 'maya', 'bpi', 'gotyme', 'pnb'].includes(String(m || '').toLowerCase());
+  return ['gcash', 'bdopay', 'maya', 'bpi', 'maribank', 'gotyme', 'pnb'].includes(String(m || '').toLowerCase());
 }
 
 function receivedAccountKey(b) {
@@ -7953,10 +7953,23 @@ const PLATFORM_PAYMENT_METHOD_DEFINITIONS = Object.freeze([
   { code: 'maya', displayName: 'Maya' },
   { code: 'bdo', displayName: 'BDO Pay' },
   { code: 'bpi', displayName: 'BPI' },
+  { code: 'maribank', displayName: 'MariBank' },
   { code: 'gotyme', displayName: 'GoTyme' },
   { code: 'pnb', displayName: 'PNB' },
 ]);
 let _platformActivation = null;
+const _platformPaymentQrChanges = new Map();
+
+function discardPlatformPaymentQrChange(methodCode) {
+  const code = String(methodCode || '').toLowerCase();
+  const change = _platformPaymentQrChanges.get(code);
+  if (change?.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(change.previewUrl);
+  _platformPaymentQrChanges.delete(code);
+}
+
+function discardAllPlatformPaymentQrChanges() {
+  [..._platformPaymentQrChanges.keys()].forEach(discardPlatformPaymentQrChange);
+}
 
 function platformActivationPaymentMethods(savedMethods = []) {
   const saved = new Map((savedMethods || []).map(method => [String(method.code || '').toLowerCase(), method]));
@@ -7979,6 +7992,7 @@ function platformActivationPaymentMethods(savedMethods = []) {
 function renderPlatformPaymentMethods(methods) {
   const body = $('platformPaymentMethodsBody');
   if (!body) return;
+  discardAllPlatformPaymentQrChanges();
   body.innerHTML = methods.map(method => {
     const code = esc(String(method.code || ''));
     const name = esc(String(method.displayName || method.code || 'Payment method'));
@@ -8016,10 +8030,15 @@ function renderPlatformPaymentMethods(methods) {
 }
 
 function platformQrElements(source) {
-  const upload = source?.closest('.platform-qr-upload');
+  const row = source?.classList?.contains('platform-payment-method')
+    ? source
+    : source?.closest('.platform-payment-method');
+  const upload = source?.classList?.contains('platform-payment-method')
+    ? source.querySelector('.platform-qr-upload')
+    : source?.closest('.platform-qr-upload');
   return {
     upload,
-    row: source?.closest('.platform-payment-method'),
+    row,
     file: upload?.querySelector('.platform-qr-file'),
     url: upload?.querySelector('.platform-method-qr-url'),
     preview: upload?.querySelector('.platform-qr-preview'),
@@ -8035,9 +8054,9 @@ function setPlatformQrStatus(elements, message, kind = '') {
   elements.status.className = `platform-qr-status ${kind}`.trim();
 }
 
-function setPlatformQrPreview(elements, imageUrl, displayName) {
+function setPlatformQrPreview(elements, imageUrl, displayName, { updateValue = true } = {}) {
   if (!elements.preview || !elements.url) return;
-  elements.url.value = imageUrl || '';
+  if (updateValue) elements.url.value = imageUrl || '';
   elements.preview.replaceChildren();
   if (imageUrl) {
     const image = document.createElement('img');
@@ -8072,40 +8091,69 @@ async function uploadPlatformPaymentQr(input) {
   }
   const methodCode = elements.row.dataset.code || '';
   const displayName = elements.row.dataset.displayName || 'Payment';
-  const retry = () => uploadPlatformPaymentQrFile(elements, file, methodCode, displayName);
-  if (!(await ensureReceiptMfa(retry))) return;
-  await retry();
-}
-
-async function uploadPlatformPaymentQrFile(elements, file, methodCode, displayName) {
-  const button = elements.uploadButton;
-  if (button) { button.disabled = true; button.textContent = 'Uploading...'; }
-  if (elements.removeButton) elements.removeButton.disabled = true;
-  setPlatformQrStatus(elements, 'Uploading securely...');
-  try {
-    const asset = await DB.uploadTenantPaymentQr({ methodCode, file });
-    if (!asset?.url) throw new Error('The upload did not return an image URL.');
-    setPlatformQrPreview(elements, asset.url, displayName);
-    setPlatformQrStatus(elements, 'Uploaded. Click Save Activation Settings to publish it.', 'ok');
-    toast(`${displayName} QR image uploaded.`);
-  } catch (error) {
-    console.error('uploadPlatformPaymentQr:', error);
-    setPlatformQrStatus(elements, error?.message || 'Could not upload the QR image.', 'err');
-    toast(error?.message || 'Could not upload the QR image.', 'err');
-  } finally {
-    if (button) button.disabled = false;
-    if (elements.removeButton) elements.removeButton.disabled = false;
-    if (button) button.textContent = elements.url?.value ? 'Replace Image' : 'Upload Image';
-  }
+  discardPlatformPaymentQrChange(methodCode);
+  const previewUrl = URL.createObjectURL(file);
+  _platformPaymentQrChanges.set(methodCode, { action: 'upload', file, previewUrl, displayName });
+  setPlatformQrPreview(elements, previewUrl, displayName, { updateValue: false });
+  setPlatformQrStatus(elements, 'Selected. Click Save Activation Settings to upload and publish it.', 'ok');
 }
 
 async function removePlatformPaymentQr(button) {
   const elements = platformQrElements(button);
-  if (!elements.row || !elements.url?.value) return;
+  if (!elements.row) return;
+  const methodCode = elements.row.dataset.code || '';
+  const staged = _platformPaymentQrChanges.get(methodCode);
+  if (!elements.url?.value && staged?.action !== 'upload') return;
   const displayName = elements.row.dataset.displayName || 'Payment';
   if (!confirm(`Remove the ${displayName} QR image?`)) return;
-  setPlatformQrPreview(elements, '', displayName);
+  discardPlatformPaymentQrChange(methodCode);
+  if (elements.url?.value) {
+    _platformPaymentQrChanges.set(methodCode, { action: 'delete', displayName });
+  }
+  setPlatformQrPreview(elements, '', displayName, { updateValue: false });
   setPlatformQrStatus(elements, 'Removed. Click Save Activation Settings to publish the change.', 'ok');
+}
+
+function platformPaymentMethodRow(methodCode) {
+  const code = String(methodCode || '').toLowerCase();
+  return [...document.querySelectorAll('.platform-payment-method')]
+    .find(row => String(row.dataset.code || '').toLowerCase() === code) || null;
+}
+
+async function savePlatformPaymentQrChanges() {
+  for (const [methodCode, change] of [..._platformPaymentQrChanges.entries()]) {
+    const row = platformPaymentMethodRow(methodCode);
+    if (!row) throw new Error(`The ${change.displayName || methodCode} payment row is unavailable.`);
+    const elements = platformQrElements(row);
+    const button = elements.uploadButton;
+    if (button) button.disabled = true;
+    if (elements.removeButton) elements.removeButton.disabled = true;
+    try {
+      if (change.action === 'upload') {
+        if (button) button.textContent = 'Uploading...';
+        setPlatformQrStatus(elements, 'Uploading securely...');
+        const asset = await DB.uploadTenantPaymentQr({ methodCode, file: change.file });
+        if (!asset?.url) throw new Error('The upload did not return an image URL.');
+        setPlatformQrPreview(elements, asset.url, change.displayName);
+        setPlatformQrStatus(elements, 'QR image saved securely.', 'ok');
+      } else {
+        setPlatformQrStatus(elements, 'Removing securely...');
+        await DB.deleteTenantPaymentQr({ methodCode });
+        setPlatformQrPreview(elements, '', change.displayName);
+        setPlatformQrStatus(elements, 'QR image removed.', 'ok');
+      }
+      discardPlatformPaymentQrChange(methodCode);
+    } catch (error) {
+      setPlatformQrStatus(elements, error?.message || 'Could not save the QR image.', 'err');
+      throw error;
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = elements.url?.value ? 'Replace Image' : 'Upload Image';
+      }
+      if (elements.removeButton) elements.removeButton.disabled = false;
+    }
+  }
 }
 
 function platformActivationReadinessChecks(activation) {
@@ -8208,12 +8256,22 @@ async function savePlatformActivationSettings() {
   button.disabled = true;
   button.textContent = 'Saving...';
   try {
-    const savedActivation = await DB.saveTenantActivationSettings({
+    let savedActivation = await DB.saveTenantActivationSettings({
       publicBookingRequested,
       emailEnabled,
       replyToEmail,
       paymentMethods,
     });
+    if (_platformPaymentQrChanges.size) {
+      button.textContent = 'Saving Payment Images...';
+      await savePlatformPaymentQrChanges();
+      savedActivation = await DB.saveTenantActivationSettings({
+        publicBookingRequested,
+        emailEnabled,
+        replyToEmail,
+        paymentMethods: collectPlatformPaymentMethods(),
+      });
+    }
     await renderPlatformActivationSettings(savedActivation);
     await renderIntegrationStatus();
     toast(window.PB_PUBLIC_BOOKING_ENABLED
