@@ -2869,7 +2869,6 @@ window.DB = {
           venue: {
             replyToEmail: email || null,
             emailEnabled: emailEnabled === true,
-            publicBookingEnabled: publicBookingRequested === true,
           },
           paymentMethods: normalized,
         },

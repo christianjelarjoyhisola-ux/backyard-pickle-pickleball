@@ -16,6 +16,7 @@ test('payment settings save account details before linking managed QR assets', (
   assert.match(admin, /_platformPaymentQrChanges\.set\(methodCode, \{ action: 'upload', file, previewUrl, displayName \}\)/);
   assert.match(client, /async deleteTenantPaymentQr\(\{ methodCode \}\)/);
   assert.match(client, /'X-Asset-Action': 'delete'/);
+  assert.doesNotMatch(client, /publicBookingEnabled: publicBookingRequested === true/);
 });
 
 test('MariBank is available in admin and public checkout payment mappings', () => {
