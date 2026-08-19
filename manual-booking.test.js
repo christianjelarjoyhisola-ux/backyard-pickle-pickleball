@@ -77,3 +77,15 @@ test('platform source mapper preserves the owner audit trail', () => {
   assert.match(edge, /source: "manual_dashboard"/);
   assert.match(migration, /'manual_booking_created'/);
 });
+
+test('court-owner manual quote falls back to the public booking fee', () => {
+  assert.match(admin, /DB\.getSettings\(\)\.catch\(\(\) => \(\{\}\)\)/);
+  assert.match(admin, /billing: activation\?\.billing \|\| publicBilling/);
+  assert.match(admin, /quote\.feeReady/);
+});
+
+test('manual creation retries an iOS network failure with the same request body', () => {
+  assert.match(client, /load failed\|failed to fetch/);
+  assert.match(client, /_sb\.functions\.invoke\('create-manual-booking'/);
+  assert.match(client, /body: requestBody/);
+});

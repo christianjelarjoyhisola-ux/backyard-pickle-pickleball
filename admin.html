@@ -6468,18 +6468,22 @@ function mbxQuote() {
     : hours.length > maximumHours
       ? `Select no more than ${maximumHours} consecutive hours.`
       : '';
-  const billing = _mbxState.activation?.billing || {};
-  const amount = Number(billing.feeAmount || 0);
-  const mode = String(billing.feeMode || 'fixed_per_hour');
+  const billing = _mbxState.activation?.billing;
+  const amount = Number(billing?.feeAmount);
+  const mode = String(billing?.feeMode || '');
+  const feeReady = Number.isFinite(amount) && amount >= 0 &&
+    ['fixed_per_booking', 'fixed_per_hour', 'percentage'].includes(mode);
   let bookingFee = mode === 'fixed_per_booking'
     ? amount
     : mode === 'percentage'
       ? subtotal * amount / 100
       : amount * hours.length;
+  if (!feeReady) bookingFee = 0;
   bookingFee = Math.round(bookingFee * 100) / 100;
   return {
     subtotal,
     bookingFee,
+    feeReady,
     total: Math.round((subtotal + bookingFee) * 100) / 100,
     duration: hours.length,
     startHour: hours.length ? Math.min(...hours) : null,
@@ -6735,9 +6739,10 @@ function mbxRenderSummary() {
     </div>
     <div class="mbx-summary-row"><span>Booking type</span><strong>${_mbxState.bookingType === 'event' ? 'Event booking' : 'Court booking'}</strong></div>
     <div class="mbx-summary-row"><span>${_mbxState.bookingType === 'event' ? 'Event court fee' : 'Court fee'}</span><strong>${fmt(quote.subtotal)}</strong></div>
-    <div class="mbx-summary-row"><span>Booking fee</span><strong>${fmt(quote.bookingFee)}</strong></div>
+    <div class="mbx-summary-row"><span>Booking fee</span><strong>${quote.feeReady ? fmt(quote.bookingFee) : 'Unavailable'}</strong></div>
     <div class="mbx-summary-row total"><span>Total paid</span><strong>${fmt(quote.total)}</strong></div>
-    ${quote.selectionError ? `<div class="mbx-error" style="display:block">${esc(quote.selectionError)}</div>` : ''}`;
+    ${quote.selectionError ? `<div class="mbx-error" style="display:block">${esc(quote.selectionError)}</div>` : ''}
+    ${quote.feeReady ? '' : '<div class="mbx-error" style="display:block">The booking fee could not be loaded. Refresh this page before accepting payment.</div>'}`;
   $('mbxPaidConfirmationTitle').textContent = `${fmt(quote.total)} received in full`;
 }
 
@@ -6770,7 +6775,7 @@ function mbxCustomerValid({ showErrors = false } = {}) {
 
 function mbxUpdateActions() {
   const quote = mbxQuote();
-  const hasSchedule = quote.duration > 0 && !quote.selectionError && !_mbxState.loading;
+  const hasSchedule = quote.duration > 0 && quote.feeReady && !quote.selectionError && !_mbxState.loading;
   $('mbxNextBtn').disabled = !hasSchedule;
   $('mbxCreateBtn').disabled = _mbxState.saving || !mbxCustomerValid();
 }
@@ -6916,12 +6921,26 @@ async function openManualBookingModal(prefill = {}) {
   modal.classList.add('show');
   modal.querySelector('.mbx-modal')?.focus({ preventScroll: true });
   try {
-    const [courts, activation] = await Promise.all([
+    const [courts, activation, publicSettings] = await Promise.all([
       DB.getCourts(),
       DB.getTenantActivationSettings(),
+      DB.getSettings().catch(() => ({})),
     ]);
     _mbxState.courts = (courts || []).filter(court => !court.blocked);
-    _mbxState.activation = activation || {};
+    const publicFeeAmount = Number(publicSettings?.maintenance_fee);
+    const publicFeeMode = String(publicSettings?.fee_type || '').toLowerCase() === 'flat'
+      ? 'fixed_per_booking'
+      : 'fixed_per_hour';
+    const publicBilling = Number.isFinite(publicFeeAmount) && publicFeeAmount >= 0
+      ? { feeMode: publicFeeMode, feeAmount: publicFeeAmount }
+      : null;
+    // Tenant owners intentionally cannot read the protected platform-billing
+    // row. The same fee is public checkout data, so use that public copy for
+    // the manual-booking preview while the server remains authoritative.
+    _mbxState.activation = {
+      ...(activation || {}),
+      billing: activation?.billing || publicBilling,
+    };
     const eventOption = $('mbxBookingType')?.querySelector('option[value="event"]');
     const hasEventCourt = _mbxState.courts.some(court => mbxCourtSupportsType(court, 'event'));
     if (eventOption) eventOption.disabled = !hasEventCourt;
