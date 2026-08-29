@@ -24,3 +24,18 @@ test('manager image availability flags are accepted without exposing storage pat
   assert.match(database, /receipt\?\.imageAvailable === true/);
   assert.match(database, /receiptImageAvailable \? 'protected' : null/);
 });
+
+test('expired past receipts expose an owner-only late confirmation action', () => {
+  assert.match(admin, /function canLateConfirmBooking\(b\)/);
+  assert.match(admin, /\['owner','court_owner'\]\.includes\(role\)/);
+  assert.match(admin, /b\?\.receiptVerificationId/);
+  assert.match(admin, /✅ Confirm Payment/);
+  assert.match(admin, /Confirm Paid — Past Booking/);
+  assert.match(database, /async confirmExpiredPayment\(ref, note\)/);
+  assert.match(database, /decision: 'late_approve'/);
+});
+
+test('late confirmation records payment without reopening released court time', () => {
+  assert.match(admin, /records the expired past booking as completed and does not reopen its released court time/);
+  assert.match(admin, /records it as PAID and COMPLETED without reopening the court time/);
+});

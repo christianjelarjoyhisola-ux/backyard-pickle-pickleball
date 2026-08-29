@@ -2871,13 +2871,13 @@ tr:hover td { background: var(--bg2); }
         </a>
         <div id="vmReceiptNoImg" style="display:none;font-size:.76rem;color:var(--muted)">No receipt image was uploaded for this booking.</div>
       </div>
-      <p style="font-size:.78rem;color:var(--muted);text-align:center;margin-top:12px;line-height:1.6">
+      <p id="vmReviewHint" style="font-size:.78rem;color:var(--muted);text-align:center;margin-top:12px;line-height:1.6">
         Open your GCash inbox and match the reference above, then mark as received to confirm the booking and send an email to the customer.
       </p>
     </div>
     <div class="m-foot">
-      <button class="btn btn-d" onclick="rejectPayment()">❌ Not Received</button>
-      <button class="btn btn-p" onclick="verifyAndConfirm()">✅ Received — Confirm</button>
+      <button class="btn btn-d" id="vmRejectBtn" onclick="rejectPayment()">❌ Not Received</button>
+      <button class="btn btn-p" id="vmConfirmBtn" onclick="verifyAndConfirm()">✅ Received — Confirm</button>
     </div>
   </div>
 </div>
@@ -3943,6 +3943,18 @@ function canRescheduleBooking(b) {
 function bookingCanCancel(b){
   return !['cancelled','forfeited','completed','expired'].includes(String(b?.status || '').toLowerCase());
 }
+function canLateConfirmBooking(b){
+  const role = String(sess?.role || '').toLowerCase();
+  const endMs = b?.endsAt ? new Date(b.endsAt).getTime() : NaN;
+  return !!(
+    window.PB_PLATFORM_V1 &&
+    ['owner','court_owner'].includes(role) &&
+    String(b?.status || '').toLowerCase() === 'forfeited' &&
+    String(b?.paymentStatus || '').toLowerCase() === 'for_verification' &&
+    b?.receiptVerificationId &&
+    Number.isFinite(endMs) && endMs <= Date.now()
+  );
+}
 function bookingActionsHtml(b, canDelete){
   const grouped = Array.isArray(b.items) && b.items.length > 1;
   const actionRef = b.primaryRef || b.ref;
@@ -3950,6 +3962,7 @@ function bookingActionsHtml(b, canDelete){
     const canCancel = bookingCanCancel(b);
     const canArchive = canDelete && ['cancelled', 'forfeited', 'completed'].includes(String(b.status || '').toLowerCase());
     return `${bookingDetailsButton(b)}
+      ${canLateConfirmBooking(b) ? `<button class="btn btn-p btn-sm" style="font-weight:800" title="Review the receipt and record this past booking as paid" onclick="openVerifyModal('${jsArg(actionRef)}')">✅ Confirm Payment</button>` : ''}
       ${canRescheduleBooking(b) ? `<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#3f7fb7;border:1px solid rgba(74,154,220,.3);font-weight:700" onclick="openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>` : ''}
       ${b.status==='confirmed' && b.email ? `<button class="btn btn-sm" style="background:rgba(var(--green-rgb),.12);color:var(--green);border:1px solid rgba(var(--green-rgb),.3)" onclick="resendConfirmationEmail('${jsArg(actionRef)}')">Resend Email</button>` : ''}
       ${canCancel ? `<button class="btn btn-d btn-sm" onclick="cancelPlatformBooking('${jsArg(actionRef)}')">Cancel</button>` : ''}
@@ -5290,6 +5303,13 @@ async function openVerifyModal(ref, { returnFocus = null } = {}) {
   _verifyModalLastFocus = returnFocus || document.activeElement;
   const b = await getBookingGroupByRef(ref);
   if (!b) { toast('Booking not found.', 'err'); return; }
+  const lateConfirmation = canLateConfirmBooking(b);
+  $('verifyPaymentTitle').textContent = lateConfirmation ? '🕓 CONFIRM PAST PAYMENT' : '🔍 VERIFY PAYMENT';
+  $('vmReviewHint').textContent = lateConfirmation
+    ? 'Review the receipt, then confirm it as paid. This records the expired past booking as completed and does not reopen its released court time.'
+    : 'Open your payment inbox and match the reference above, then mark as received to confirm the booking and send an email to the customer.';
+  $('vmRejectBtn').hidden = lateConfirmation;
+  $('vmConfirmBtn').textContent = lateConfirmation ? '✅ Confirm Paid — Past Booking' : '✅ Received — Confirm';
   $('vmMethod').textContent = paymentMethodLabel(b.paymentMethod);
   $('vmGcashRef').textContent = b.gcashRef || '—';
   $('vmName').textContent = b.fullName;
@@ -5307,6 +5327,7 @@ async function openVerifyModal(ref, { returnFocus = null } = {}) {
   await vmPopulateReceipt(b);
   $('verifyModal').dataset.ref = ref;
   $('verifyModal').dataset.refs = JSON.stringify(b.refs || [ref]);
+  $('verifyModal').dataset.lateConfirmation = lateConfirmation ? '1' : '0';
   const overlay = $('verifyModal');
   overlay.hidden = false;
   overlay.inert = false;
@@ -5417,6 +5438,23 @@ async function verifyAndConfirm() {
     const bkForPay = await getBookingGroupByRef(ref);
     if (isDigitalPayment(bkForPay?.paymentMethod) && !bkForPay?.receiptImageUrl) {
       toast('Cannot confirm: no receipt image is attached to this digital payment.', 'err');
+      return;
+    }
+    if ($('verifyModal').dataset.lateConfirmation === '1') {
+      if (!canLateConfirmBooking(bkForPay)) {
+        toast('Only a System Owner or Court Owner can confirm this expired payment.', 'err');
+        return;
+      }
+      if (!confirm(`Confirm payment for past booking ${bkForPay.displayRef || bkForPay.ref}? This records it as PAID and COMPLETED without reopening the court time.`)) return;
+      await DB.confirmExpiredPayment(
+        ref,
+        'Receipt confirmed by an owner after the payment-review deadline.'
+      );
+      closeVerifyModal();
+      toast('Past payment confirmed. Booking recorded as paid and completed.');
+      await renderBookings();
+      if (_curSection === 'payreview') await renderPaymentReview();
+      renderDash();
       return;
     }
     const isFullyPaid = bkForPay && bkForPay.downpayment >= bkForPay.total;

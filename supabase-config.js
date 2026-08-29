@@ -1911,6 +1911,42 @@ window.DB = {
     _pbClearFastCache(['bookings']);
   },
 
+  async confirmExpiredPayment(ref, note) {
+    if (!PB_PLATFORM_V1) {
+      const error = new Error('Protected late payment confirmation is available only on the tenant platform.');
+      error.code = 'PLATFORM_LATE_CONFIRMATION_REQUIRED';
+      throw error;
+    }
+    const session = await _pbAuthenticatedSession();
+    const role = String(window.Auth?.getSession?.()?.role || '').toLowerCase();
+    if (!session || !['owner', 'court_owner'].includes(role)) {
+      const error = new Error('Only a System Owner or Court Owner can confirm an expired payment.');
+      error.code = 'LATE_CONFIRMATION_ACCESS_DENIED';
+      throw error;
+    }
+    const booking = await this.getBookingByRef(ref);
+    if (!booking?.receiptVerificationId) {
+      const error = new Error('This booking has no receipt awaiting review.');
+      error.code = 'LATE_CONFIRMATION_RECEIPT_REQUIRED';
+      throw error;
+    }
+    const data = await _invokeEdgeFunction(
+      `review-payment-receipt?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      {
+        tenantSlug: PB_TENANT_SLUG,
+        verificationId: booking.receiptVerificationId,
+        decision: 'late_approve',
+        note: String(note || 'Late payment confirmed after the review deadline.').trim(),
+      },
+      { preferDirect: true }
+    );
+    if (!data?.ok) {
+      throw new Error(data?.message || data?.error || 'Late payment confirmation failed.');
+    }
+    _pbClearFastCache(['bookings', 'platformAvailability']);
+    return data;
+  },
+
   async rescheduleBooking(ref, change = {}) {
     if (!PB_PLATFORM_V1) {
       const error = new Error('Protected rescheduling is unavailable in legacy mode.');
