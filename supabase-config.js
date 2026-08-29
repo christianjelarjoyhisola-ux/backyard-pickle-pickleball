@@ -1947,6 +1947,42 @@ window.DB = {
     return data;
   },
 
+  async restoreExpiredPayment(ref, note) {
+    if (!PB_PLATFORM_V1) {
+      const error = new Error('Protected booking restoration is available only on the tenant platform.');
+      error.code = 'PLATFORM_RESTORE_CONFIRMATION_REQUIRED';
+      throw error;
+    }
+    const session = await _pbAuthenticatedSession();
+    const role = String(window.Auth?.getSession?.()?.role || '').toLowerCase();
+    if (!session || !['owner', 'court_owner'].includes(role)) {
+      const error = new Error('Only a System Owner or Court Owner can restore an expired booking.');
+      error.code = 'RESTORE_CONFIRMATION_ACCESS_DENIED';
+      throw error;
+    }
+    const booking = await this.getBookingByRef(ref);
+    if (!booking?.receiptVerificationId) {
+      const error = new Error('This booking has no receipt awaiting review.');
+      error.code = 'RESTORE_CONFIRMATION_RECEIPT_REQUIRED';
+      throw error;
+    }
+    const data = await _invokeEdgeFunction(
+      `review-payment-receipt?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+      {
+        tenantSlug: PB_TENANT_SLUG,
+        verificationId: booking.receiptVerificationId,
+        decision: 'restore_approve',
+        note: String(note || 'Expired future booking restored and payment confirmed.').trim(),
+      },
+      { preferDirect: true }
+    );
+    if (!data?.ok) {
+      throw new Error(data?.message || data?.error || 'Restore and confirmation failed.');
+    }
+    _pbClearFastCache(['bookings', 'platformAvailability']);
+    return data;
+  },
+
   async rescheduleBooking(ref, change = {}) {
     if (!PB_PLATFORM_V1) {
       const error = new Error('Protected rescheduling is unavailable in legacy mode.');

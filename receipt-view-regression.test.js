@@ -39,3 +39,18 @@ test('late confirmation records payment without reopening released court time', 
   assert.match(admin, /records the expired past booking as completed and does not reopen its released court time/);
   assert.match(admin, /records it as PAID and COMPLETED without reopening the court time/);
 });
+
+test('future forfeited receipts expose atomic restore and confirm', () => {
+  assert.match(admin, /function canRestoreConfirmBooking\(b\)/);
+  assert.match(admin, /startMs > Date\.now\(\)/);
+  assert.match(admin, /♻️ Restore &amp; Confirm/);
+  assert.match(admin, /every released slot is still available/);
+  assert.match(admin, /dataset\.restoreConfirmation/);
+  assert.match(database, /async restoreExpiredPayment\(ref, note\)/);
+  assert.match(database, /decision: 'restore_approve'/);
+});
+
+test('future restore warns that original court time must be reclaimed', () => {
+  assert.match(admin, /reserve the original court time again only if every slot is still available/);
+  assert.match(admin, /Booking restored, payment confirmed, and original court time reserved/);
+});

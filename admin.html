@@ -3955,6 +3955,18 @@ function canLateConfirmBooking(b){
     Number.isFinite(endMs) && endMs <= Date.now()
   );
 }
+function canRestoreConfirmBooking(b){
+  const role = String(sess?.role || '').toLowerCase();
+  const startMs = b?.startsAt ? new Date(b.startsAt).getTime() : NaN;
+  return !!(
+    window.PB_PLATFORM_V1 &&
+    ['owner','court_owner'].includes(role) &&
+    String(b?.status || '').toLowerCase() === 'forfeited' &&
+    String(b?.paymentStatus || '').toLowerCase() === 'for_verification' &&
+    b?.receiptVerificationId &&
+    Number.isFinite(startMs) && startMs > Date.now()
+  );
+}
 function bookingActionsHtml(b, canDelete){
   const grouped = Array.isArray(b.items) && b.items.length > 1;
   const actionRef = b.primaryRef || b.ref;
@@ -3962,6 +3974,7 @@ function bookingActionsHtml(b, canDelete){
     const canCancel = bookingCanCancel(b);
     const canArchive = canDelete && ['cancelled', 'forfeited', 'completed'].includes(String(b.status || '').toLowerCase());
     return `${bookingDetailsButton(b)}
+      ${canRestoreConfirmBooking(b) ? `<button class="btn btn-p btn-sm" style="font-weight:800" title="Restore the original court time if it is still available, then confirm payment" onclick="openVerifyModal('${jsArg(actionRef)}')">♻️ Restore &amp; Confirm</button>` : ''}
       ${canLateConfirmBooking(b) ? `<button class="btn btn-p btn-sm" style="font-weight:800" title="Review the receipt and record this past booking as paid" onclick="openVerifyModal('${jsArg(actionRef)}')">✅ Confirm Payment</button>` : ''}
       ${canRescheduleBooking(b) ? `<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#3f7fb7;border:1px solid rgba(74,154,220,.3);font-weight:700" onclick="openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>` : ''}
       ${b.status==='confirmed' && b.email ? `<button class="btn btn-sm" style="background:rgba(var(--green-rgb),.12);color:var(--green);border:1px solid rgba(var(--green-rgb),.3)" onclick="resendConfirmationEmail('${jsArg(actionRef)}')">Resend Email</button>` : ''}
@@ -5304,12 +5317,19 @@ async function openVerifyModal(ref, { returnFocus = null } = {}) {
   const b = await getBookingGroupByRef(ref);
   if (!b) { toast('Booking not found.', 'err'); return; }
   const lateConfirmation = canLateConfirmBooking(b);
-  $('verifyPaymentTitle').textContent = lateConfirmation ? '🕓 CONFIRM PAST PAYMENT' : '🔍 VERIFY PAYMENT';
-  $('vmReviewHint').textContent = lateConfirmation
+  const restoreConfirmation = canRestoreConfirmBooking(b);
+  $('verifyPaymentTitle').textContent = restoreConfirmation
+    ? '♻️ RESTORE & CONFIRM BOOKING'
+    : lateConfirmation ? '🕓 CONFIRM PAST PAYMENT' : '🔍 VERIFY PAYMENT';
+  $('vmReviewHint').textContent = restoreConfirmation
+    ? 'Review the receipt, then restore the original court time and confirm payment. The operation succeeds only if every released slot is still available.'
+    : lateConfirmation
     ? 'Review the receipt, then confirm it as paid. This records the expired past booking as completed and does not reopen its released court time.'
     : 'Open your payment inbox and match the reference above, then mark as received to confirm the booking and send an email to the customer.';
-  $('vmRejectBtn').hidden = lateConfirmation;
-  $('vmConfirmBtn').textContent = lateConfirmation ? '✅ Confirm Paid — Past Booking' : '✅ Received — Confirm';
+  $('vmRejectBtn').hidden = lateConfirmation || restoreConfirmation;
+  $('vmConfirmBtn').textContent = restoreConfirmation
+    ? '♻️ Restore Court & Confirm Paid'
+    : lateConfirmation ? '✅ Confirm Paid — Past Booking' : '✅ Received — Confirm';
   $('vmMethod').textContent = paymentMethodLabel(b.paymentMethod);
   $('vmGcashRef').textContent = b.gcashRef || '—';
   $('vmName').textContent = b.fullName;
@@ -5328,6 +5348,7 @@ async function openVerifyModal(ref, { returnFocus = null } = {}) {
   $('verifyModal').dataset.ref = ref;
   $('verifyModal').dataset.refs = JSON.stringify(b.refs || [ref]);
   $('verifyModal').dataset.lateConfirmation = lateConfirmation ? '1' : '0';
+  $('verifyModal').dataset.restoreConfirmation = restoreConfirmation ? '1' : '0';
   const overlay = $('verifyModal');
   overlay.hidden = false;
   overlay.inert = false;
@@ -5438,6 +5459,23 @@ async function verifyAndConfirm() {
     const bkForPay = await getBookingGroupByRef(ref);
     if (isDigitalPayment(bkForPay?.paymentMethod) && !bkForPay?.receiptImageUrl) {
       toast('Cannot confirm: no receipt image is attached to this digital payment.', 'err');
+      return;
+    }
+    if ($('verifyModal').dataset.restoreConfirmation === '1') {
+      if (!canRestoreConfirmBooking(bkForPay)) {
+        toast('Only a System Owner or Court Owner can restore this future expired booking.', 'err');
+        return;
+      }
+      if (!confirm(`Restore and confirm booking ${bkForPay.displayRef || bkForPay.ref}? This will reserve the original court time again only if every slot is still available.`)) return;
+      await DB.restoreExpiredPayment(
+        ref,
+        'Receipt confirmed by an owner after the payment-review deadline; original court time restored.'
+      );
+      closeVerifyModal();
+      toast('Booking restored, payment confirmed, and original court time reserved.');
+      await renderBookings();
+      if (_curSection === 'payreview') await renderPaymentReview();
+      renderDash();
       return;
     }
     if ($('verifyModal').dataset.lateConfirmation === '1') {
