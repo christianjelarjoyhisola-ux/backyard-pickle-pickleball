@@ -68,3 +68,11 @@ test('status segregation is shared by list and calendar views', () => {
   assert.match(admin, /bks = bks\.filter\(bookingMatchesStatusGroup\)/);
   assert.match(admin, /const bks = allBks\.filter\(bookingMatchesType\)\.filter\(bookingMatchesStatusGroup\)/);
 });
+
+test('confirmed bookings complete as soon as their scheduled end passes', () => {
+  assert.match(admin, /window\.PB_PLATFORM_V1 && !window\.PB_USE_LOCAL_DATA/);
+  assert.match(admin, /const result = await DB\.completeEndedBookings\(\)/);
+  assert.match(admin, /return now >= endDt/);
+  assert.match(database, /async completeEndedBookings\(\)/);
+  assert.match(database, /rpc\('complete_ended_tenant_bookings'/);
+});

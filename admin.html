@@ -4506,8 +4506,12 @@ function renderDashCharts(bookings) {
    ============================================== */
 let autoCompleteRan = false;
 async function autoCompleteBookings(bks) {
-  if (window.PB_PLATFORM_V1) { autoCompleteRan = true; return 0; }
   if (autoCompleteRan) return;
+  if (window.PB_PLATFORM_V1 && !window.PB_USE_LOCAL_DATA) {
+    const result = await DB.completeEndedBookings();
+    autoCompleteRan = true;
+    return Number(result?.processed || 0);
+  }
   const now = new Date();
   const toComplete = bks.filter(b => {
     if (b.status !== 'confirmed') return false;
@@ -4520,7 +4524,7 @@ async function autoCompleteBookings(bks) {
     if (period === 'AM' && hh === 12) hh = 0;
     const endDt = new Date(`${b.date}T${String(hh).padStart(2,'0')}:00:00`);
     if (Number.isNaN(endDt.getTime())) return false;
-    return (now - endDt) > 24 * 60 * 60 * 1000;
+    return now >= endDt;
   });
   if (toComplete.length > 0) {
     await Promise.all(toComplete.map(b => DB.updateBooking(b.ref, { status: 'completed' })));

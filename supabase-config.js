@@ -1598,6 +1598,21 @@ window.DB = {
   },
 
   // ---- BOOKINGS ----
+  async completeEndedBookings() {
+    if (!PB_PLATFORM_V1) return { processed: 0 };
+    const session = await _pbAuthenticatedSession();
+    if (!session) throw new Error('Your staff session has expired. Please sign in again.');
+    const { data, error } = await _sb.rpc('complete_ended_tenant_bookings', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
+    });
+    if (error) throw new Error(error.message || 'Ended bookings could not be completed.');
+    if (Number(data?.processed || 0) > 0) {
+      _pbClearFastCache(['bookings', 'platformAvailability']);
+    }
+    return data || { processed: 0 };
+  },
+
   async getBookings(filters = {}) {
     const opts = filters || {};
     if (PB_PLATFORM_V1) {
