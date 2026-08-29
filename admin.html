@@ -802,20 +802,21 @@ tr:hover td { background: var(--bg2); }
 .amount-deadline.final,.amount-deadline.overdue,.amount-deadline.forfeited { color:var(--red); }
 .booking-mobile-card { display: none; }
 .booking-section-toolbar { margin-bottom: 12px; }
-.booking-type-tabs {
+.booking-type-tabs, .booking-status-tabs {
   display:flex; gap:6px; margin-bottom:12px; padding:5px;
   border:1px solid var(--border); border-radius:14px; background:var(--surface);
   box-shadow:var(--shadow); overflow-x:auto; scrollbar-width:thin;
 }
-.booking-type-tab {
+.booking-type-tab, .booking-status-tab {
   display:inline-flex; align-items:center; justify-content:center; gap:8px;
   min-height:40px; padding:8px 14px; border:0; border-radius:10px;
   background:transparent; color:var(--text2); font:800 .82rem 'DM Sans',sans-serif;
   white-space:nowrap; cursor:pointer; transition:background .18s,color .18s,box-shadow .18s;
 }
-.booking-type-tab span { min-width:24px; padding:2px 7px; border-radius:999px; background:var(--bg2); color:var(--text3); font-size:.68rem; }
-.booking-type-tab.active { background:var(--green); color:#fff; box-shadow:0 6px 16px rgba(var(--green-rgb),.2); }
-.booking-type-tab.active span { background:rgba(255,255,255,.16); color:#fff; }
+.booking-type-tab span, .booking-status-tab span { min-width:24px; padding:2px 7px; border-radius:999px; background:var(--bg2); color:var(--text3); font-size:.68rem; }
+.booking-type-tab.active, .booking-status-tab.active { background:var(--green); color:#fff; box-shadow:0 6px 16px rgba(var(--green-rgb),.2); }
+.booking-type-tab.active span, .booking-status-tab.active span { background:rgba(255,255,255,.16); color:#fff; }
+.booking-status-tabs { background:var(--bg2); box-shadow:none; }
 .booking-toolbar-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .booking-toolbar-actions .view-toggle {
   display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--border);
@@ -1243,8 +1244,8 @@ tr:hover td { background: var(--bg2); }
     font-size: .86rem !important; white-space: nowrap;
   }
   #sec-bookings .booking-toolbar-actions .booking-export-btn { padding-inline: 10px; }
-  #sec-bookings .booking-type-tabs { margin-bottom:10px; border-radius:12px; }
-  #sec-bookings .booking-type-tab { min-height:38px; padding:7px 11px; font-size:.76rem; }
+  #sec-bookings .booking-type-tabs, #sec-bookings .booking-status-tabs { margin-bottom:10px; border-radius:12px; }
+  #sec-bookings .booking-type-tab, #sec-bookings .booking-status-tab { min-height:38px; padding:7px 11px; font-size:.76rem; }
   #tableView .tbl-wrap {
     border-radius: 12px; overflow: hidden; background: var(--surface);
   }
@@ -2193,6 +2194,13 @@ tr:hover td { background: var(--bg2); }
       <div class="booking-type-tabs" role="tablist" aria-label="Booking type">
         <button type="button" class="booking-type-tab active" data-booking-type="all" onclick="setBookingType('all')">All Bookings <span id="bookingCountAll">0</span></button>
         <button type="button" class="booking-type-tab" data-booking-type="court" onclick="setBookingType('court')">Court Bookings <span id="bookingCountCourt">0</span></button>
+      </div>
+      <div class="booking-status-tabs" role="tablist" aria-label="Booking status group">
+        <button type="button" class="booking-status-tab active" data-booking-status="all" onclick="setBookingStatusGroup('all')">All Statuses <span id="bookingStatusCountAll">0</span></button>
+        <button type="button" class="booking-status-tab" data-booking-status="pending" onclick="setBookingStatusGroup('pending')">Pending <span id="bookingStatusCountPending">0</span></button>
+        <button type="button" class="booking-status-tab" data-booking-status="confirmed" onclick="setBookingStatusGroup('confirmed')">Confirmed <span id="bookingStatusCountConfirmed">0</span></button>
+        <button type="button" class="booking-status-tab" data-booking-status="completed" onclick="setBookingStatusGroup('completed')">Completed <span id="bookingStatusCountCompleted">0</span></button>
+        <button type="button" class="booking-status-tab" data-booking-status="cancelled" onclick="setBookingStatusGroup('cancelled')">Cancelled / Forfeited <span id="bookingStatusCountCancelled">0</span></button>
       </div>
 
       <!-- CALENDAR VIEW -->
@@ -4523,6 +4531,7 @@ async function autoCompleteBookings(bks) {
 
 let _bookingRenderSeq = 0;
 let _bookingType = 'all';
+let _bookingStatusGroup = 'all';
 let _bookingPage = 1;
 let _bookingPageSize = 50;
 let _balanceProcessorStarted = false;
@@ -4580,6 +4589,31 @@ function setBookingType(type) {
   });
   renderBookings();
 }
+function bookingMatchesType(b) {
+  if (_bookingType === 'host') return Boolean(b?.hostBooking);
+  if (_bookingType === 'court') return !b?.hostBooking;
+  return true;
+}
+function bookingMatchesStatusGroup(b, group = _bookingStatusGroup) {
+  const status = String(b?.status || '').toLowerCase();
+  if (group === 'pending') return ['pending', 'verifying'].includes(status);
+  if (group === 'confirmed') return ['confirmed', 'restored'].includes(status);
+  if (group === 'completed') return status === 'completed';
+  if (group === 'cancelled') return ['cancelled', 'forfeited'].includes(status);
+  return true;
+}
+function setBookingStatusGroup(group) {
+  _bookingStatusGroup = ['all','pending','confirmed','completed','cancelled'].includes(group) ? group : 'all';
+  _bookingPage = 1;
+  if ($('fStatus')) $('fStatus').value = '';
+  document.querySelectorAll('.booking-status-tab').forEach(btn => {
+    const active = btn.dataset.bookingStatus === _bookingStatusGroup;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  renderBookings();
+  if ($('calendarView')?.style.display !== 'none') renderCalendar();
+}
 function setBookingPageSize(value) {
   _bookingPageSize = [25,50,100].includes(Number(value)) ? Number(value) : 50;
   _bookingPage = 1;
@@ -4636,8 +4670,21 @@ async function renderBookings(){
   if ($('bookingCountAll')) $('bookingCountAll').textContent = String(allCount);
   if ($('bookingCountCourt')) $('bookingCountCourt').textContent = String(courtCount);
   if ($('bookingCountHost')) $('bookingCountHost').textContent = String(hostCount);
-  if (_bookingType === 'host') bks = bks.filter(b => b.hostBooking);
-  else if (_bookingType === 'court') bks = bks.filter(b => !b.hostBooking);
+  bks = bks.filter(bookingMatchesType);
+  const statusGroups = groupBookings(bks);
+  const statusCounts = {
+    all: statusGroups.length,
+    pending: statusGroups.filter(b => bookingMatchesStatusGroup(b, 'pending')).length,
+    confirmed: statusGroups.filter(b => bookingMatchesStatusGroup(b, 'confirmed')).length,
+    completed: statusGroups.filter(b => bookingMatchesStatusGroup(b, 'completed')).length,
+    cancelled: statusGroups.filter(b => bookingMatchesStatusGroup(b, 'cancelled')).length,
+  };
+  if ($('bookingStatusCountAll')) $('bookingStatusCountAll').textContent = String(statusCounts.all);
+  if ($('bookingStatusCountPending')) $('bookingStatusCountPending').textContent = String(statusCounts.pending);
+  if ($('bookingStatusCountConfirmed')) $('bookingStatusCountConfirmed').textContent = String(statusCounts.confirmed);
+  if ($('bookingStatusCountCompleted')) $('bookingStatusCountCompleted').textContent = String(statusCounts.completed);
+  if ($('bookingStatusCountCancelled')) $('bookingStatusCountCancelled').textContent = String(statusCounts.cancelled);
+  bks = bks.filter(bookingMatchesStatusGroup);
   const totalRawBookings = groupBookings(bks).length;
   const { q, fd, fs, fp } = bookingFilters();
   if(q) bks=bks.filter(b=>[b.ref,b.groupRef,b.fullName,b.email,b.courtName,b.gcashRef].some(v=>String(v||'').toLowerCase().includes(q)));
@@ -4951,11 +4998,12 @@ function _calGetMtRulesForDate(ds) {
 }
 
 async function renderCalendar(){
-  const [bks, courts, settings] = await Promise.all([
+  const [allBks, courts, settings] = await Promise.all([
     DB.getBookings(),
     DB.getCourts(),
     DB.getSettings()
   ]);
+  const bks = allBks.filter(bookingMatchesType).filter(bookingMatchesStatusGroup);
 
   _nbOpenHour = parseInt(settings.open_hour || '6');
   _nbCloseHour = parseInt(settings.close_hour || '22');

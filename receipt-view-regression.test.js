@@ -54,3 +54,17 @@ test('future restore warns that original court time must be reclaimed', () => {
   assert.match(admin, /reserve the original court time again only if every slot is still available/);
   assert.match(admin, /Booking restored, payment confirmed, and original court time reserved/);
 });
+
+test('bookings are segregated into clear status groups with counts', () => {
+  assert.match(admin, /data-booking-status="pending"[\s\S]*Pending/);
+  assert.match(admin, /data-booking-status="confirmed"[\s\S]*Confirmed/);
+  assert.match(admin, /data-booking-status="completed"[\s\S]*Completed/);
+  assert.match(admin, /data-booking-status="cancelled"[\s\S]*Cancelled \/ Forfeited/);
+  assert.match(admin, /\['pending', 'verifying'\]\.includes\(status\)/);
+  assert.match(admin, /\['cancelled', 'forfeited'\]\.includes\(status\)/);
+});
+
+test('status segregation is shared by list and calendar views', () => {
+  assert.match(admin, /bks = bks\.filter\(bookingMatchesStatusGroup\)/);
+  assert.match(admin, /const bks = allBks\.filter\(bookingMatchesType\)\.filter\(bookingMatchesStatusGroup\)/);
+});
