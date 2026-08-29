@@ -64,9 +64,10 @@ test('bookings are segregated into clear status groups with counts', () => {
   assert.match(admin, /\['cancelled', 'forfeited'\]\.includes\(status\)/);
 });
 
-test('status segregation is shared by list and calendar views', () => {
-  assert.match(admin, /bks = bks\.filter\(bookingMatchesStatusGroup\)/);
-  assert.match(admin, /const bks = allBks\.filter\(bookingMatchesType\)\.filter\(bookingMatchesStatusGroup\)/);
+test('status segregation is shared by list and calendar without callback indexes overriding the selected group', () => {
+  assert.match(admin, /bks = bks\.filter\(b => bookingMatchesStatusGroup\(b\)\)/);
+  assert.match(admin, /const bks = allBks[\s\S]*\.filter\(bookingMatchesType\)[\s\S]*\.filter\(b => bookingMatchesStatusGroup\(b\)\)/);
+  assert.doesNotMatch(admin, /\.filter\(bookingMatchesStatusGroup\)/);
 });
 
 test('confirmed bookings complete as soon as their scheduled end passes', () => {

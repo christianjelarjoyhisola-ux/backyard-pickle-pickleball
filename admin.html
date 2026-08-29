@@ -4688,7 +4688,9 @@ async function renderBookings(){
   if ($('bookingStatusCountConfirmed')) $('bookingStatusCountConfirmed').textContent = String(statusCounts.confirmed);
   if ($('bookingStatusCountCompleted')) $('bookingStatusCountCompleted').textContent = String(statusCounts.completed);
   if ($('bookingStatusCountCancelled')) $('bookingStatusCountCancelled').textContent = String(statusCounts.cancelled);
-  bks = bks.filter(bookingMatchesStatusGroup);
+  // Use a wrapper so Array.filter's second callback argument (the row index)
+  // cannot override bookingMatchesStatusGroup's optional group parameter.
+  bks = bks.filter(b => bookingMatchesStatusGroup(b));
   const totalRawBookings = groupBookings(bks).length;
   const { q, fd, fs, fp } = bookingFilters();
   if(q) bks=bks.filter(b=>[b.ref,b.groupRef,b.fullName,b.email,b.courtName,b.gcashRef].some(v=>String(v||'').toLowerCase().includes(q)));
@@ -5007,7 +5009,9 @@ async function renderCalendar(){
     DB.getCourts(),
     DB.getSettings()
   ]);
-  const bks = allBks.filter(bookingMatchesType).filter(bookingMatchesStatusGroup);
+  const bks = allBks
+    .filter(bookingMatchesType)
+    .filter(b => bookingMatchesStatusGroup(b));
 
   _nbOpenHour = parseInt(settings.open_hour || '6');
   _nbCloseHour = parseInt(settings.close_hour || '22');
