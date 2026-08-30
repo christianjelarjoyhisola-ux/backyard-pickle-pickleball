@@ -1613,6 +1613,43 @@ window.DB = {
     return data || { processed: 0 };
   },
 
+  async restoreCancelledBooking(ref, reason = '') {
+    if (!PB_PLATFORM_V1) {
+      const error = new Error('Protected cancellation recovery is available only on the tenant platform.');
+      error.code = 'PLATFORM_CANCELLED_RESTORE_REQUIRED';
+      throw error;
+    }
+    const session = await _pbAuthenticatedSession();
+    const role = String(window.Auth?.getSession?.()?.role || '').toLowerCase();
+    if (!session || !['owner', 'court_owner'].includes(role)) {
+      const error = new Error('Only a System Owner or Court Owner can restore an accidentally cancelled booking.');
+      error.code = 'CANCELLED_RESTORE_ACCESS_DENIED';
+      throw error;
+    }
+    const booking = await this.getBookingByRef(ref);
+    const startsAtMs = booking?.startsAt ? new Date(booking.startsAt).getTime() : NaN;
+    if (
+      !booking?.id ||
+      String(booking.status || '').toLowerCase() !== 'cancelled' ||
+      String(booking.paymentStatus || '').toLowerCase() !== 'paid' ||
+      !Number.isFinite(startsAtMs) ||
+      startsAtMs <= Date.now()
+    ) {
+      const error = new Error('Only a future, fully paid cancelled booking can be restored.');
+      error.code = 'CANCELLED_RESTORE_NOT_ELIGIBLE';
+      throw error;
+    }
+    const { data, error } = await _sb.rpc('restore_cancelled_tenant_booking', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
+      p_booking_id: booking.id,
+      p_reason: String(reason || 'Accidental cancellation restored by dashboard operator.').trim(),
+    });
+    if (error) throw new Error(error.message || 'The cancelled booking could not be restored.');
+    _pbClearFastCache(['bookings', 'platformAvailability']);
+    return data;
+  },
+
   async getBookings(filters = {}) {
     const opts = filters || {};
     if (PB_PLATFORM_V1) {

@@ -77,3 +77,23 @@ test('confirmed bookings complete as soon as their scheduled end passes', () => 
   assert.match(database, /async completeEndedBookings\(\)/);
   assert.match(database, /rpc\('complete_ended_tenant_bookings'/);
 });
+
+test('future paid cancellations expose owner-only accidental restore actions', () => {
+  assert.match(admin, /function canRestoreAccidentalCancellation\(b\)/);
+  assert.match(admin, /String\(b\?\.status \|\| ''\)\.toLowerCase\(\) === 'cancelled'/);
+  assert.match(admin, /String\(b\?\.paymentStatus \|\| ''\)\.toLowerCase\(\) === 'paid'/);
+  assert.match(admin, /Number\.isFinite\(startMs\) && startMs > Date\.now\(\)/);
+  assert.match(admin, /Restore booking/);
+  assert.match(admin, /Restore accidental cancellation/);
+});
+
+test('accidental cancellation restore warns about conflicts and refreshes every booking view', () => {
+  assert.match(admin, /The original slot must still be free/);
+  assert.match(admin, /await DB\.restoreCancelledBooking/);
+  assert.match(admin, /Promise\.all\(\[renderBookings\(\), renderCalendar\(\), renderDash\(\)\]\)/);
+  assert.match(admin, /original court time is reserved again/);
+  assert.match(database, /async restoreCancelledBooking\(ref, reason = ''\)/);
+  assert.match(database, /rpc\('restore_cancelled_tenant_booking'/);
+  assert.match(database, /p_booking_id: booking\.id/);
+  assert.match(database, /_pbClearFastCache\(\['bookings', 'platformAvailability'\]\)/);
+});
