@@ -1627,15 +1627,15 @@ window.DB = {
       throw error;
     }
     const booking = await this.getBookingByRef(ref);
-    const startsAtMs = booking?.startsAt ? new Date(booking.startsAt).getTime() : NaN;
+    const endsAtMs = booking?.endsAt ? new Date(booking.endsAt).getTime() : NaN;
     if (
       !booking?.id ||
       String(booking.status || '').toLowerCase() !== 'cancelled' ||
       String(booking.paymentStatus || '').toLowerCase() !== 'paid' ||
-      !Number.isFinite(startsAtMs) ||
-      startsAtMs <= Date.now()
+      !Number.isFinite(endsAtMs) ||
+      endsAtMs <= Date.now()
     ) {
-      const error = new Error('Only a future, fully paid cancelled booking can be restored.');
+      const error = new Error('Only a future or ongoing, fully paid cancelled booking that has not ended can be restored.');
       error.code = 'CANCELLED_RESTORE_NOT_ELIGIBLE';
       throw error;
     }

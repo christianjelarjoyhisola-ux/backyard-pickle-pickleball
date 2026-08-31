@@ -78,17 +78,21 @@ test('confirmed bookings complete as soon as their scheduled end passes', () => 
   assert.match(database, /rpc\('complete_ended_tenant_bookings'/);
 });
 
-test('future paid cancellations expose owner-only accidental restore actions', () => {
+test('future or ongoing paid cancellations expose owner-only accidental restore actions until the booking ends', () => {
   assert.match(admin, /function canRestoreAccidentalCancellation\(b\)/);
   assert.match(admin, /String\(b\?\.status \|\| ''\)\.toLowerCase\(\) === 'cancelled'/);
   assert.match(admin, /String\(b\?\.paymentStatus \|\| ''\)\.toLowerCase\(\) === 'paid'/);
-  assert.match(admin, /Number\.isFinite\(startMs\) && startMs > Date\.now\(\)/);
+  assert.match(admin, /Number\.isFinite\(endMs\) && endMs > Date\.now\(\)/);
   assert.match(admin, /Restore booking/);
   assert.match(admin, /Restore accidental cancellation/);
+  assert.match(database, /Number\.isFinite\(endsAtMs\)/);
+  assert.match(database, /endsAtMs <= Date\.now\(\)/);
+  assert.match(database, /future or ongoing, fully paid cancelled booking that has not ended/);
 });
 
 test('accidental cancellation restore warns about conflicts and refreshes every booking view', () => {
-  assert.match(admin, /The original slot must still be free/);
+  assert.match(admin, /future or ongoing booking has not ended/);
+  assert.match(admin, /Every original slot must still be free/);
   assert.match(admin, /await DB\.restoreCancelledBooking/);
   assert.match(admin, /Promise\.all\(\[renderBookings\(\), renderCalendar\(\), renderDash\(\)\]\)/);
   assert.match(admin, /original court time is reserved again/);

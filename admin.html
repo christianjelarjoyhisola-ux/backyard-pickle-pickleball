@@ -3977,13 +3977,13 @@ function canRestoreConfirmBooking(b){
 }
 function canRestoreAccidentalCancellation(b){
   const role = String(sess?.role || '').toLowerCase();
-  const startMs = b?.startsAt ? new Date(b.startsAt).getTime() : NaN;
+  const endMs = b?.endsAt ? new Date(b.endsAt).getTime() : NaN;
   return !!(
     window.PB_PLATFORM_V1 &&
     ['owner','court_owner'].includes(role) &&
     String(b?.status || '').toLowerCase() === 'cancelled' &&
     String(b?.paymentStatus || '').toLowerCase() === 'paid' &&
-    Number.isFinite(startMs) && startMs > Date.now()
+    Number.isFinite(endMs) && endMs > Date.now()
   );
 }
 function bookingActionsHtml(b, canDelete){
@@ -3993,7 +3993,7 @@ function bookingActionsHtml(b, canDelete){
     const canCancel = bookingCanCancel(b);
     const canArchive = canDelete && ['cancelled', 'forfeited', 'completed'].includes(String(b.status || '').toLowerCase());
     return `${bookingDetailsButton(b)}
-      ${canRestoreAccidentalCancellation(b) ? `<button class="btn btn-p btn-sm" style="font-weight:800" title="Restore the original court time only if every slot is still free" onclick="restoreAccidentalCancellation('${jsArg(actionRef)}',this)">Restore booking</button>` : ''}
+      ${canRestoreAccidentalCancellation(b) ? `<button class="btn btn-p btn-sm" style="font-weight:800" title="Restore a future or ongoing booking only if every original slot is still free" onclick="restoreAccidentalCancellation('${jsArg(actionRef)}',this)">Restore booking</button>` : ''}
       ${canRestoreConfirmBooking(b) ? `<button class="btn btn-p btn-sm" style="font-weight:800" title="Restore the original court time if it is still available, then confirm payment" onclick="openVerifyModal('${jsArg(actionRef)}')">♻️ Restore &amp; Confirm</button>` : ''}
       ${canLateConfirmBooking(b) ? `<button class="btn btn-p btn-sm" style="font-weight:800" title="Review the receipt and record this past booking as paid" onclick="openVerifyModal('${jsArg(actionRef)}')">✅ Confirm Payment</button>` : ''}
       ${canRescheduleBooking(b) ? `<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#3f7fb7;border:1px solid rgba(74,154,220,.3);font-weight:700" onclick="openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>` : ''}
@@ -5384,12 +5384,12 @@ async function restoreAccidentalCancellation(ref, button = null) {
   try {
     const booking = await getBookingGroupByRef(ref);
     if (!booking || !canRestoreAccidentalCancellation(booking)) {
-      toast('Only a System Owner or Court Owner can restore a future, fully paid cancelled booking.', 'err');
+      toast('Only a System Owner or Court Owner can restore a future or ongoing, fully paid cancelled booking that has not ended.', 'err');
       return;
     }
     const confirmed = confirm(
       `Restore accidentally cancelled booking ${ref}?\n\n` +
-      'This will confirm the booking and reserve its original court time again. The original slot must still be free; restoration will fail safely if any slot has since been booked.'
+      'This future or ongoing booking has not ended. Restoring it will confirm the booking and reserve its original court time again. Every original slot must still be free; restoration will fail safely if any slot has since been booked.'
     );
     if (!confirmed) return;
     if (button) {
