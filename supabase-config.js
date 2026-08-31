@@ -3533,6 +3533,146 @@ window.DB = {
     return data || null;
   },
 
+  async prepareReceivedBookingFeeRemittance({
+    expectedAmount,
+    reason = '',
+    idempotencyKey = '',
+  } = {}) {
+    const amount = Math.round(Number(expectedAmount) * 100) / 100;
+    const safeReason = String(reason || '').trim();
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('The exact accumulated amount is required.');
+    if (safeReason.length < 10) throw new Error('Explain why the System Owner is posting this received payment (at least 10 characters).');
+    const { data, error } = await _sb.rpc('prepare_received_booking_fee_remittance', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
+      p_expected_amount: amount,
+      p_reason: safeReason,
+      p_idempotency_key: String(idempotencyKey || '').trim() || _remittanceIdempotencyKey('prepare-received'),
+    });
+    if (error) throw new Error(_extractFnError(error, 'Could not prepare the received remittance'));
+    return data || null;
+  },
+
+  async recordReceivedBookingFeeRemittance(remittanceId, {
+    amount,
+    paymentMethod = 'bank_transfer',
+    paymentRef = '',
+    proofData = '',
+    proofUrl = '',
+    note = '',
+    idempotencyKey = '',
+  } = {}) {
+    const safeRemittanceId = String(remittanceId || '').replace(/[^a-z0-9-]/gi, '');
+    const receivedAmount = Math.round(Number(amount) * 100) / 100;
+    const method = String(paymentMethod || 'bank_transfer').trim().toLowerCase();
+    const reference = String(paymentRef || '').trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeRemittanceId)) throw new Error('The prepared remittance record is missing.');
+    if (!Number.isFinite(receivedAmount) || receivedAmount <= 0) throw new Error('The exact received amount is required.');
+    if (!['bank_transfer','gcash','maya','cash','other'].includes(method)) throw new Error('Choose a supported payment method.');
+    if (reference.replace(/[^a-z0-9]/gi, '').length < 4) throw new Error('Enter a valid transaction reference.');
+
+    const proofDataUrl = String(proofData || proofUrl || '');
+    if (!/^data:image\/(jpeg|png|webp);base64,/i.test(proofDataUrl)) throw new Error('Choose a valid JPG, PNG, or WebP receipt image.');
+    const image = _remittanceProofUpload(proofDataUrl);
+    const { data: authData, error: authError } = await _sb.auth.getUser();
+    if (authError || !authData?.user?.id) throw new Error('Your session expired. Please sign in again.');
+    const tenantId = String(window.Auth?.getSession?.()?.tenantId || '');
+    if (!/^[0-9a-f-]{36}$/i.test(tenantId)) throw new Error('Your tenant session expired. Please sign in again.');
+    const recordKey = String(idempotencyKey || '').trim() || _remittanceIdempotencyKey('record-received');
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(recordKey)) throw new Error('A valid received-payment retry key is required.');
+    if (!globalThis.crypto?.subtle) throw new Error('Secure receipt verification is not available in this browser.');
+    const digestBuffer = await globalThis.crypto.subtle.digest('SHA-256', image.bytes);
+    const proofDigest = [...new Uint8Array(digestBuffer)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    const objectName = `${recordKey.replace(/[^a-z0-9._-]/gi, '')}-${proofDigest}.${image.extension}`;
+    const proofPath = `${tenantId}/remittances/${safeRemittanceId}/${authData.user.id}/${objectName}`;
+    const { error: uploadError } = await _sb.storage
+      .from('tenant-private')
+      .upload(proofPath, image.bytes, { contentType: image.mimeType, upsert: false });
+    const proofAlreadyExists = /already exists|duplicate/i.test(String(uploadError?.message || ''));
+    if (uploadError && !proofAlreadyExists) throw new Error(_extractFnError(uploadError, 'Could not upload the received-payment receipt'));
+
+    const normalizedReference = reference.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const reconcile = async () => {
+      try {
+        const { data: detail, error: detailError } = await _sb.rpc('get_booking_fee_remittance_detail', {
+          p_tenant_slug: PB_TENANT_SLUG,
+          p_hostname: _pbTenantHostname(),
+          p_remittance_id: remittanceId,
+        });
+        if (detailError || !detail) return { loaded: false, detail: null, matches: false, pathUsed: false };
+        const header = detail.remittance || detail.record || detail;
+        const payments = Array.isArray(detail.payments) ? detail.payments : [];
+        const latest = header.latest_payment || header.latestPayment || detail.latest_payment || detail.latestPayment || payments[payments.length - 1] || {};
+        const paymentAmount = Number(latest.amount_accepted ?? latest.amountAccepted ?? latest.amount_submitted ?? latest.amountSubmitted ?? 0);
+        const paymentReference = String(latest.payment_reference ?? latest.paymentReference ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const entrySource = String(latest.entry_source ?? latest.entrySource ?? '');
+        const latestProofPath = String(latest.proof_storage_path ?? latest.proofStoragePath ?? latest.proof_path ?? latest.proofPath ?? '');
+        const status = String(header.status || '').toLowerCase();
+        const matches = ['settled','paid','completed'].includes(status)
+          && Math.abs(paymentAmount - receivedAmount) <= 0.005
+          && paymentReference === normalizedReference
+          && entrySource === 'system_owner_external_receipt'
+          && latestProofPath === proofPath;
+        const pathUsed = latestProofPath === proofPath || payments.some(payment => String(payment.proof_storage_path ?? payment.proofStoragePath ?? payment.proof_path ?? payment.proofPath ?? '') === proofPath);
+        return { loaded: true, detail, matches, pathUsed };
+      } catch (_) {
+        return { loaded: false, detail: null, matches: false, pathUsed: false };
+      }
+    };
+
+    let data = null;
+    let error = null;
+    try {
+      ({ data, error } = await _sb.rpc('record_received_booking_fee_remittance', {
+        p_tenant_slug: PB_TENANT_SLUG,
+        p_hostname: _pbTenantHostname(),
+        p_remittance_id: remittanceId,
+        p_amount: receivedAmount,
+        p_payment_method: method,
+        p_payment_reference: reference,
+        p_proof_path: proofPath,
+        p_note: String(note || '').trim() || null,
+        p_idempotency_key: recordKey,
+      }));
+    } catch (rpcError) {
+      error = rpcError;
+    }
+    if (!error && data) return data;
+
+    const reconciliation = await reconcile();
+    if (reconciliation.matches) return reconciliation.detail;
+    const code = String(error?.code || '');
+    const definiteRejection = /^(22|23|42|P000[12]|PGRST20)/.test(code);
+    if (definiteRejection && reconciliation.loaded && !reconciliation.pathUsed) {
+      await _sb.storage.from('tenant-private').remove([proofPath]).catch(() => {});
+      throw new Error(_extractFnError(error, 'Could not record the received remittance'));
+    }
+    const unknown = new Error('The payment posting status is unknown. Refresh the remittance ledger before retrying.');
+    unknown.code = 'REMITTANCE_RECEIVED_PAYMENT_STATUS_UNKNOWN';
+    throw unknown;
+  },
+
+  async cancelReceivedBookingFeeRemittance(remittanceId, {
+    reason = '',
+    idempotencyKey = '',
+  } = {}) {
+    const safeRemittanceId = String(remittanceId || '').trim();
+    const safeReason = String(reason || '').trim();
+    const cancelKey = String(idempotencyKey || '').trim() || _remittanceIdempotencyKey('cancel-received');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeRemittanceId)) throw new Error('The external-receipt draft is missing.');
+    if (safeReason.length < 10) throw new Error('Enter a clear release reason (at least 10 characters).');
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(cancelKey)) throw new Error('A valid release retry key is required.');
+    const { data, error } = await _sb.rpc('cancel_received_booking_fee_remittance', {
+      p_tenant_slug: PB_TENANT_SLUG,
+      p_hostname: _pbTenantHostname(),
+      p_remittance_id: safeRemittanceId,
+      p_reason: safeReason,
+      p_idempotency_key: cancelKey,
+    });
+    if (error) throw new Error(_extractFnError(error, 'Could not release the external-receipt draft'));
+    return data || null;
+  },
+
   async submitBookingFeeRemittance(remittanceId, {
     amount = null,
     paymentMethod = 'gcash',
@@ -4701,6 +4841,9 @@ window.DB = {
     async getBookingFeeRemittanceHistory() { return []; },
     async getBookingFeeRemittanceDetail() { return null; },
     async prepareBookingFeeRemittance() { throw new Error('Remittance preparation requires Supabase.'); },
+    async prepareReceivedBookingFeeRemittance() { throw new Error('Received-remittance preparation requires Supabase.'); },
+    async recordReceivedBookingFeeRemittance() { throw new Error('Received-remittance posting requires Supabase.'); },
+    async cancelReceivedBookingFeeRemittance() { throw new Error('Received-remittance release requires Supabase.'); },
     async submitBookingFeeRemittance() { throw new Error('Remittance submission requires Supabase.'); },
     async getBookingFeeRemittanceProofUrl() { throw new Error('No remittance receipt is stored in local data mode.'); },
     async getBookingFeeRemittanceProofSignedUrl() { throw new Error('No remittance receipt is stored in local data mode.'); },

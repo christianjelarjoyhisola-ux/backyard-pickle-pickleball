@@ -2546,6 +2546,7 @@ tr:hover td { background: var(--bg2); }
         </div>
         <div class="rm-live-action" id="rmLiveAction">
           <button class="btn btn-p rm-action" id="rmPrepareBtn" type="button" onclick="openRemittancePrepare()" hidden>Prepare Remittance</button>
+          <button class="btn btn-p rm-action" id="rmPostReceivedBtn" type="button" onclick="openReceivedRemittancePost()" hidden>Post Received Payment</button>
           <div class="rm-live-hint" id="rmPrepareHint">Available to the court owner when a balance can be frozen.</div>
         </div>
       </section>
@@ -3265,6 +3266,70 @@ tr:hover td { background: var(--bg2); }
   </div>
 </div>
 
+<!-- SYSTEM OWNER DIRECT RECEIPT POSTING -->
+<div class="overlay" id="rmPostReceivedModal" aria-hidden="true">
+  <form class="modal rm-modal wide" role="dialog" aria-modal="true" aria-labelledby="rmPostReceivedTitle" tabindex="-1" onkeydown="remittanceModalKeydown(event)" onsubmit="reviewReceivedRemittancePost(event)">
+    <div class="m-hd">
+      <div><h2 id="rmPostReceivedTitle">POST RECEIVED PAYMENT</h2><div class="rm-modal-sub" id="rmPostReceivedSubtitle">Record money already received from the court owner</div></div>
+      <button class="m-x" type="button" aria-label="Close received remittance" onclick="closeRemittanceModal('rmPostReceivedModal')">&#10005;</button>
+    </div>
+    <div class="m-body">
+      <input type="hidden" id="rmPostReceivedId" />
+      <section id="rmPostReceivedEntry">
+        <div class="rm-hero">
+          <div><div class="rm-hero-label">Exact accumulated balance</div><div class="rm-hero-title" id="rmPostReceivedCoverage">The database will verify this amount before freezing the cutoff</div></div>
+          <div class="rm-hero-amount" id="rmPostReceivedAmount">&#8369;0.00</div>
+        </div>
+        <div class="rm-info-note"><span aria-hidden="true">&#9432;</span><span><strong>Use this only after the money reached your account.</strong> The exact balance will be frozen, the receipt will be attached, and the remittance will be marked settled in one permanent audit record.</span></div>
+        <div class="rm-form-grid">
+          <div class="fg" style="margin:0">
+            <label class="fl" for="rmPostReceivedMethod">Payment Method <span style="color:var(--red)">*</span></label>
+            <select class="fi" id="rmPostReceivedMethod" required>
+              <option value="bank_transfer" selected>Bank transfer (MariBank / InstaPay)</option>
+              <option value="gcash">GCash</option>
+              <option value="maya">Maya</option>
+              <option value="cash">Cash</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="fg" style="margin:0"><label class="fl" for="rmPostReceivedRef">Transaction Reference <span style="color:var(--red)">*</span></label><input class="fi" id="rmPostReceivedRef" type="text" autocomplete="off" maxlength="100" placeholder="Enter the transfer reference" required /></div>
+          <div class="fg full" style="margin:0"><label class="fl" for="rmPostReceivedReason">Reason for Owner Posting <span style="color:var(--red)">*</span></label><textarea class="fi" id="rmPostReceivedReason" rows="2" minlength="10" maxlength="500" placeholder="Example: Court owner paid directly before preparing the remittance" required style="resize:vertical"></textarea></div>
+          <div class="fg full" style="margin:0"><label class="fl" for="rmPostReceivedNote">Note <span style="color:var(--text3);font-weight:500;text-transform:none">(optional)</span></label><textarea class="fi" id="rmPostReceivedNote" rows="2" maxlength="500" placeholder="Add any reconciliation details" style="resize:vertical"></textarea></div>
+          <div class="fg full" style="margin:0">
+            <label class="fl" for="rmPostReceivedProof">Receipt Screenshot <span style="color:var(--red)">*</span></label>
+            <label class="rm-upload" id="rmPostReceivedProofLabel" for="rmPostReceivedProof">&#128247; Choose receipt screenshot</label>
+            <input id="rmPostReceivedProof" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" style="position:absolute;opacity:0;pointer-events:none" onchange="handleReceivedRemittanceProof(event)" />
+            <img class="rm-proof-preview" id="rmPostReceivedProofPreview" src="" alt="Selected received-remittance receipt preview" />
+          </div>
+        </div>
+      </section>
+      <section id="rmPostReceivedConfirm" hidden>
+        <div class="rm-info-note" style="border-color:rgba(255,160,0,.35);background:rgba(255,160,0,.06)"><span aria-hidden="true">&#9888;</span><span><strong>Final confirmation.</strong> Check the amount and transaction details carefully. Posting creates a permanent settled remittance and removes these booking fees from the live accumulated balance.</span></div>
+        <div class="rm-review-grid" style="margin-top:14px">
+          <div class="rm-review-receipt"><img id="rmPostReceivedConfirmProof" src="" alt="Receipt to be permanently attached" /></div>
+          <div>
+            <div class="rm-hero" style="grid-template-columns:1fr"><div><div class="rm-hero-label">Amount that will be settled</div><div class="rm-hero-amount" id="rmPostReceivedConfirmAmount">&#8369;0.00</div></div></div>
+            <div class="rm-audit-list">
+              <div class="rm-audit-row"><span>Payment method</span><span id="rmPostReceivedConfirmMethod">&mdash;</span></div>
+              <div class="rm-audit-row"><span>Transaction reference</span><span id="rmPostReceivedConfirmRef">&mdash;</span></div>
+              <div class="rm-audit-row"><span>Owner-posting reason</span><span id="rmPostReceivedConfirmReason">&mdash;</span></div>
+              <div class="rm-audit-row"><span>Note</span><span id="rmPostReceivedConfirmNote">&mdash;</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="m-foot" id="rmPostReceivedEntryActions">
+      <button class="btn btn-g" type="button" onclick="closeRemittanceModal('rmPostReceivedModal')">Not Yet</button>
+      <button class="btn btn-p" id="rmPostReceivedReviewBtn" type="submit">Review Payment</button>
+    </div>
+    <div class="m-foot" id="rmPostReceivedConfirmActions" hidden>
+      <button class="btn btn-g" type="button" onclick="editReceivedRemittancePost()">Back &amp; Edit</button>
+      <button class="btn btn-p" id="rmPostReceivedConfirmBtn" type="button" onclick="submitReceivedRemittancePost()">Post &amp; Settle Payment</button>
+    </div>
+  </form>
+</div>
+
 <!-- PERMANENT REMITTANCE RECORD DETAIL -->
 <div class="overlay" id="rmDetailModal" aria-hidden="true">
   <div class="modal rm-modal wide" role="dialog" aria-modal="true" aria-labelledby="rmDetailTitle" tabindex="-1" onkeydown="remittanceModalKeydown(event)">
@@ -3280,10 +3345,11 @@ tr:hover td { background: var(--bg2); }
 <!-- CANCEL AN UNPAID FROZEN REMITTANCE -->
 <div class="overlay" id="rmCancelModal" aria-hidden="true">
   <form class="modal rm-modal" role="dialog" aria-modal="true" aria-labelledby="rmCancelTitle" tabindex="-1" onkeydown="remittanceModalKeydown(event)" onsubmit="submitRemittanceCancellation(event)">
-    <div class="m-hd"><div><h2 id="rmCancelTitle">CANCEL PREPARED REMITTANCE</h2><div class="rm-modal-sub">Return its bookings to the live accumulated balance</div></div><button class="m-x" type="button" aria-label="Close cancel remittance" onclick="closeRemittanceModal('rmCancelModal')">&#10005;</button></div>
+    <div class="m-hd"><div><h2 id="rmCancelTitle">CANCEL PREPARED REMITTANCE</h2><div class="rm-modal-sub" id="rmCancelSubtitle">Return its bookings to the live accumulated balance</div></div><button class="m-x" type="button" aria-label="Close cancel remittance" onclick="closeRemittanceModal('rmCancelModal')">&#10005;</button></div>
     <div class="m-body">
       <input type="hidden" id="rmCancelId" />
-      <div class="rm-info-note" style="border-color:rgba(194,65,58,.25);background:var(--red-bg)"><span aria-hidden="true">&#9888;</span><span>This does not delete the record. The frozen booking fees become eligible again, and the cancellation remains in the audit history.</span></div>
+      <input type="hidden" id="rmCancelMode" value="court_owner" />
+      <div class="rm-info-note" style="border-color:rgba(194,65,58,.25);background:var(--red-bg)"><span aria-hidden="true">&#9888;</span><span id="rmCancelInfo">This does not delete the record. The frozen booking fees become eligible again, and the cancellation remains in the audit history.</span></div>
       <div class="fg"><label class="fl" for="rmCancelReason">Reason <span style="color:var(--red)">*</span></label><textarea class="fi" id="rmCancelReason" rows="3" maxlength="500" placeholder="Explain why this prepared remittance is being cancelled" required style="resize:vertical"></textarea></div>
     </div>
     <div class="m-foot"><button class="btn btn-g" type="button" onclick="closeRemittanceModal('rmCancelModal')">Keep Remittance</button><button class="btn btn-d" id="rmCancelConfirmBtn" type="submit">Cancel &amp; Return Balance</button></div>
@@ -8538,6 +8604,11 @@ let _rmState = {
   status: 'all',
   query: '',
   proofData: '',
+  receivedProofData: '',
+  receivedExpectedAmount: 0,
+  receivedPrepareKey: '',
+  receivedRecordKey: '',
+  receivedCancelKey: '',
   loadSeq: 0,
   modalFocus: {},
 };
@@ -8738,7 +8809,7 @@ function rmStatusKey(record) {
   if (['cancelled','canceled','void'].includes(raw)) return 'cancelled';
   if (['submitted','under-review','payment-submitted','proof-submitted','verifying','pending-review','awaiting-review'].includes(raw)) return 'under-review';
   if ([true, 1, '1', 'true', 't'].includes(rmPick(record, 'is_overdue', 'isOverdue'))) return 'overdue';
-  if (['prepared','sent','ready','awaiting-payment','pending-payment','open','partially-settled'].includes(raw)) return 'awaiting-payment';
+  if (['draft','due','prepared','sent','ready','awaiting-payment','pending-payment','open','partially-settled'].includes(raw)) return 'awaiting-payment';
   if (['overdue','past-due'].includes(raw)) return 'overdue';
   return 'accumulating';
 }
@@ -8834,6 +8905,11 @@ function rmCanPrepareInfo(dashboard) {
   return { allowed: !!raw, reason: String(rmPick(dashboard, 'prepare_reason', 'prepareReason') || '') };
 }
 
+function rmOwnerReceivedDraft(record) {
+  const source = String(rmPick(record, 'preparation_source', 'preparationSource') || '').toLowerCase();
+  return source === 'system_owner_external_receipt';
+}
+
 function rmDashboardRole() {
   return String(rmPick(_rmState.dashboard, 'role', 'account_role', 'accountRole') || sess?.role || '');
 }
@@ -8919,9 +8995,13 @@ function rmRecordCard(record) {
   const actions = [
     `<button class="btn btn-g btn-sm" type="button" onclick="openRemittanceDetails('${jsArg(id)}')">View Details</button>`,
   ];
-  if (role === 'court_owner' && ['awaiting-payment','overdue','rejected'].includes(status)) {
+  if (role === 'court_owner' && !rmOwnerReceivedDraft(record) && ['awaiting-payment','overdue','rejected'].includes(status)) {
     actions.push(`<button class="btn btn-p btn-sm" type="button" onclick="openRemittancePayment('${jsArg(id)}')">Remit Now</button>`);
     if (['awaiting-payment','rejected'].includes(status) && rmAmountSettled(record) === 0) actions.push(`<button class="btn btn-d btn-sm" type="button" onclick="openRemittanceCancellation('${jsArg(id)}')">Cancel</button>`);
+  }
+  if (role === 'owner' && ['awaiting-payment','overdue'].includes(status) && rmOwnerReceivedDraft(record) && rmAmountSettled(record) === 0) {
+    actions.push(`<button class="btn btn-p btn-sm" type="button" onclick="openReceivedRemittancePost('${jsArg(id)}')">Finish Posting</button>`);
+    actions.push(`<button class="btn btn-d btn-sm" type="button" onclick="openReceivedRemittanceCancellation('${jsArg(id)}')">Release Frozen Balance</button>`);
   }
   if (role === 'owner' && status === 'under-review') {
     actions.push(`<button class="btn btn-p btn-sm" type="button" onclick="openRemittanceReview('${jsArg(id)}')">Review Proof</button>`);
@@ -9058,12 +9138,19 @@ async function renderRemittances({ announce = false } = {}) {
       : 'Your balance keeps accumulating until you prepare payment. The database freezes the exact cutoff at that moment.';
 
     const prepareBtn = $('rmPrepareBtn');
+    const postReceivedBtn = $('rmPostReceivedBtn');
     const liveAction = $('rmLiveAction');
-    liveAction.hidden = role !== 'court_owner';
+    const ownerCanPostReceived = role === 'owner' && liveAmount > 0 && active.length === 0;
+    liveAction.hidden = role !== 'court_owner' && !ownerCanPostReceived;
     prepareBtn.hidden = role !== 'court_owner';
     prepareBtn.disabled = !canPrepare.allowed || liveAmount <= 0;
     prepareBtn.textContent = liveAmount > 0 ? `Prepare ${fmt(liveAmount)}` : 'Prepare Remittance';
-    $('rmPrepareHint').textContent = canPrepare.reason || (liveAmount <= 0 ? 'The button activates when an eligible fee is available.' : canPrepare.allowed ? 'The exact cutoff is created only after confirmation.' : `Next scheduled payment: ${nextDueLabel}`);
+    postReceivedBtn.hidden = !ownerCanPostReceived;
+    postReceivedBtn.disabled = !ownerCanPostReceived;
+    postReceivedBtn.textContent = liveAmount > 0 ? `Post Received ${fmt(liveAmount)}` : 'Post Received Payment';
+    $('rmPrepareHint').textContent = role === 'owner'
+      ? (active.length > 0 ? 'Finish the active remittance record before posting another received payment.' : liveAmount > 0 ? 'Use only after the court owner’s payment has reached your account.' : 'No accumulated booking fees are available to post.')
+      : canPrepare.reason || (liveAmount <= 0 ? 'The button activates when an eligible fee is available.' : canPrepare.allowed ? 'The exact cutoff is created only after confirmation.' : `Next scheduled payment: ${nextDueLabel}`);
 
     renderRemittanceRecords();
     if (announce) {
@@ -9159,6 +9246,7 @@ async function openRemittancePayment(id) {
   if (rmDashboardRole() !== 'court_owner') { toast('Only a court owner can submit remittance.', 'err'); return; }
   const record = rmRecordById(id);
   if (!record) { toast('Remittance record not found. Please refresh.', 'err'); return; }
+  if (rmOwnerReceivedDraft(record)) { toast('This System Owner external-receipt record cannot use the normal court-owner payment flow.', 'err'); return; }
   try {
     const destination = rmPick(_rmState.dashboard, 'payment_destination', 'paymentDestination') || {};
     const accountNumber = String(rmPick(destination, 'account_reference', 'accountReference') || '');
@@ -9226,6 +9314,185 @@ function handleRemittanceProof(event) {
   };
   reader.onerror = () => toast('Could not read that receipt image.', 'err');
   reader.readAsDataURL(file);
+}
+
+function rmReceivedActionKey(prefix) {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${random}`;
+}
+
+function rmReceivedMethodLabel(value) {
+  const select = $('rmPostReceivedMethod');
+  const option = [...(select?.options || [])].find(item => item.value === value);
+  return option?.textContent || String(value || '').replace(/_/g, ' ');
+}
+
+function rmShowReceivedPostConfirmation(show) {
+  $('rmPostReceivedEntry').hidden = !!show;
+  $('rmPostReceivedEntryActions').hidden = !!show;
+  $('rmPostReceivedConfirm').hidden = !show;
+  $('rmPostReceivedConfirmActions').hidden = !show;
+  if (show) requestAnimationFrame(() => $('rmPostReceivedConfirmBtn')?.focus());
+  else requestAnimationFrame(() => $('rmPostReceivedRef')?.focus());
+}
+
+async function openReceivedRemittancePost(id = '') {
+  if (rmDashboardRole() !== 'owner') { toast('Only the system owner can post a received remittance payment.', 'err'); return; }
+  let record = null;
+  let amount = 0;
+  let reason = '';
+  if (id) {
+    record = rmRecordById(id);
+    if (!record) { toast('Prepared remittance not found. Please refresh.', 'err'); return; }
+    try { record = await rmLoadRecordDetail(id); }
+    catch (error) { console.error('[openReceivedRemittancePost]', error); toast(error?.message || 'Could not load the prepared remittance.', 'err'); return; }
+    if (!['awaiting-payment','overdue'].includes(rmStatusKey(record)) || !rmOwnerReceivedDraft(record) || rmAmountSettled(record) > 0) {
+      toast('Only an unfinished System Owner-posted remittance can be resumed here.', 'err');
+      return;
+    }
+    amount = rmAmountRemaining(record);
+    reason = String(rmPick(record, 'system_owner_exception_reason', 'systemOwnerExceptionReason') || 'Payment received; completing the System Owner posting.');
+  } else {
+    if (_rmState.active.length > 0) { toast('Finish the active remittance record before posting another payment.', 'err'); return; }
+    const live = rmPick(_rmState.dashboard, 'live', 'current', 'accumulated', 'live_balance', 'liveBalance') || {};
+    amount = rmAmountDue(live);
+    record = live;
+    if (amount <= 0) { toast('There is no accumulated booking-fee balance to post.', 'err'); return; }
+  }
+  if (amount <= 0) { toast('This remittance has no remaining balance.', 'err'); return; }
+
+  _rmState.receivedExpectedAmount = Math.round(amount * 100) / 100;
+  _rmState.receivedProofData = '';
+  _rmState.receivedPrepareKey = rmReceivedActionKey('prepare-received');
+  _rmState.receivedRecordKey = rmReceivedActionKey('record-received');
+  $('rmPostReceivedId').value = id ? rmRecordId(record) : '';
+  $('rmPostReceivedTitle').textContent = id ? `FINISH ${rmRecordRef(record)}` : 'POST RECEIVED PAYMENT';
+  $('rmPostReceivedSubtitle').textContent = id ? 'Attach the receipt and settle the already frozen owner record' : 'Record money already received from the court owner';
+  $('rmPostReceivedCoverage').textContent = id ? rmCoverageLabel(record) : rmCoverageLabel(record, { live:true });
+  $('rmPostReceivedAmount').textContent = fmt(_rmState.receivedExpectedAmount);
+  $('rmPostReceivedMethod').value = 'bank_transfer';
+  $('rmPostReceivedRef').value = '';
+  $('rmPostReceivedReason').value = reason;
+  $('rmPostReceivedNote').value = '';
+  $('rmPostReceivedProof').value = '';
+  $('rmPostReceivedProofLabel').textContent = '📷 Choose receipt screenshot';
+  $('rmPostReceivedProofPreview').src = '';
+  $('rmPostReceivedProofPreview').style.display = 'none';
+  $('rmPostReceivedConfirmProof').src = '';
+  $('rmPostReceivedConfirmBtn').textContent = `Post & Settle ${fmt(_rmState.receivedExpectedAmount)}`;
+  rmShowReceivedPostConfirmation(false);
+  openRemittanceModal('rmPostReceivedModal', '#rmPostReceivedRef');
+}
+
+function handleReceivedRemittanceProof(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const extension = String(file.name || '').split('.').pop().toLowerCase();
+  const mimeByExtension = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp' };
+  const allowedMimes = new Set(Object.values(mimeByExtension));
+  const detectedMime = String(file.type || '').toLowerCase();
+  const normalizedMime = allowedMimes.has(detectedMime) ? detectedMime : mimeByExtension[extension];
+  if (!normalizedMime) { toast('Receipt must be a JPG, PNG, or WebP image.', 'err'); event.target.value = ''; return; }
+  if (file.size > 5 * 1024 * 1024) { toast('Receipt image is too large (maximum 5 MB).', 'err'); event.target.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    _rmState.receivedProofData = String(reader.result || '').replace(/^data:[^;]*;base64,/i, `data:${normalizedMime};base64,`);
+    $('rmPostReceivedProofPreview').src = _rmState.receivedProofData;
+    $('rmPostReceivedProofPreview').style.display = 'block';
+    $('rmPostReceivedProofLabel').textContent = `✓ ${file.name}`;
+  };
+  reader.onerror = () => toast('Could not read that receipt image.', 'err');
+  reader.readAsDataURL(file);
+}
+
+function reviewReceivedRemittancePost(event) {
+  event?.preventDefault();
+  const form = event?.currentTarget;
+  if (form && !form.checkValidity()) { form.reportValidity(); return; }
+  const reference = $('rmPostReceivedRef').value.trim();
+  const reason = $('rmPostReceivedReason').value.trim();
+  if (reference.replace(/[^a-z0-9]/gi, '').length < 4) { toast('Enter a valid transaction reference.', 'err'); $('rmPostReceivedRef').focus(); return; }
+  if (reason.length < 10) { toast('Explain why the System Owner is posting this payment (at least 10 characters).', 'err'); $('rmPostReceivedReason').focus(); return; }
+  if (!_rmState.receivedProofData) { toast('Upload the receipt screenshot before continuing.', 'err'); $('rmPostReceivedProof').focus(); return; }
+  if (_rmState.receivedExpectedAmount <= 0) { toast('The exact accumulated amount is unavailable. Please refresh.', 'err'); return; }
+
+  $('rmPostReceivedConfirmAmount').textContent = fmt(_rmState.receivedExpectedAmount);
+  $('rmPostReceivedConfirmMethod').textContent = rmReceivedMethodLabel($('rmPostReceivedMethod').value);
+  $('rmPostReceivedConfirmRef').textContent = reference;
+  $('rmPostReceivedConfirmReason').textContent = reason;
+  $('rmPostReceivedConfirmNote').textContent = $('rmPostReceivedNote').value.trim() || '—';
+  $('rmPostReceivedConfirmProof').src = _rmState.receivedProofData;
+  rmShowReceivedPostConfirmation(true);
+}
+
+function editReceivedRemittancePost() {
+  rmShowReceivedPostConfirmation(false);
+}
+
+async function submitReceivedRemittancePost() {
+  if (rmDashboardRole() !== 'owner') { toast('Only the system owner can post a received remittance payment.', 'err'); return; }
+  const amount = _rmState.receivedExpectedAmount;
+  const paymentMethod = $('rmPostReceivedMethod').value;
+  const paymentRef = $('rmPostReceivedRef').value.trim();
+  const reason = $('rmPostReceivedReason').value.trim();
+  const note = $('rmPostReceivedNote').value.trim();
+  if (amount <= 0 || paymentRef.replace(/[^a-z0-9]/gi, '').length < 4 || reason.length < 10 || !_rmState.receivedProofData) {
+    toast('Payment details changed or are incomplete. Review them again.', 'err');
+    editReceivedRemittancePost();
+    return;
+  }
+
+  const button = $('rmPostReceivedConfirmBtn');
+  rmSetBusy(button, true, 'Posting & settling...');
+  try {
+    let remittanceId = $('rmPostReceivedId').value;
+    if (!remittanceId) {
+      if (typeof DB.prepareReceivedBookingFeeRemittance !== 'function') throw new Error('The received-payment preparation service is unavailable.');
+      const preparedResult = await DB.prepareReceivedBookingFeeRemittance({
+        expectedAmount: amount,
+        reason,
+        idempotencyKey: _rmState.receivedPrepareKey,
+      });
+      const preparedPayload = preparedResult?.data && typeof preparedResult.data === 'object' ? preparedResult.data : (preparedResult || {});
+      const prepared = rmPick(preparedPayload, 'remittance', 'record') || preparedPayload;
+      remittanceId = rmRecordId(prepared);
+      if (!remittanceId) throw new Error('The balance was not prepared. Please refresh and try again.');
+      const preparedAmount = rmAmountDue(prepared);
+      if (preparedAmount > 0 && Math.abs(preparedAmount - amount) > 0.005) throw new Error('The accumulated balance changed before posting. Review the new exact amount.');
+      $('rmPostReceivedId').value = remittanceId;
+    }
+
+    if (typeof DB.recordReceivedBookingFeeRemittance !== 'function') throw new Error('The received-payment recording service is unavailable.');
+    const auditNote = [note, `System Owner posting reason: ${reason}`].filter(Boolean).join('\n').slice(0, 500);
+    const result = await DB.recordReceivedBookingFeeRemittance(remittanceId, {
+      amount,
+      paymentMethod,
+      paymentRef,
+      proofData: _rmState.receivedProofData,
+      note: auditNote,
+      idempotencyKey: _rmState.receivedRecordKey,
+    });
+    const resultPayload = result?.data && typeof result.data === 'object' ? result.data : (result || {});
+    const settledRecord = rmPick(resultPayload, 'remittance', 'record') || resultPayload;
+    if (rmRecordId(settledRecord) && rmStatusKey(settledRecord) !== 'settled') throw new Error('The payment was recorded but is not settled yet. Refresh the ledger before retrying.');
+
+    closeRemittanceModal('rmPostReceivedModal');
+    _rmState.receivedProofData = '';
+    toast(`Received payment ${fmt(amount)} posted and permanently settled.`);
+    await renderRemittances();
+    setRemittanceTab('history');
+  } catch (error) {
+    console.error('[submitReceivedRemittancePost]', error);
+    const preparedId = $('rmPostReceivedId').value;
+    const unknownStatus = error?.code === 'REMITTANCE_RECEIVED_PAYMENT_STATUS_UNKNOWN';
+    toast(unknownStatus
+      ? (error?.message || 'The payment posting status is unknown. Refresh the ledger before retrying.')
+      : preparedId
+        ? `${error?.message || 'Could not finish posting the payment.'} The frozen record is safe; retry Finish Posting.`
+        : (error?.message || 'Could not post the received payment.'), 'err');
+  } finally {
+    rmSetBusy(button, false);
+  }
 }
 
 async function submitRemittancePayment(event) {
@@ -9402,8 +9669,12 @@ async function openRemittanceDetails(id) {
     ${proof ? `<section class="rm-detail-section"><div class="rm-detail-title">Proof of remittance</div><a href="${esc(proof)}" target="_blank" rel="noopener"><img class="rm-proof-preview" style="display:block;max-height:320px" src="${esc(proof)}" alt="Proof of remittance for ${esc(rmRecordRef(record))}" /></a></section>` : ''}
     <section class="rm-detail-section"><div class="rm-detail-title">Included court bookings</div><div class="rm-booking-list">${bookingItems.length ? bookingItems.map(rmBookingCard).join('') : '<div class="rm-empty" style="min-height:110px"><div>Individual booking details are not available for this legacy record.</div></div>'}</div></section>`;
   const actions = [`<button class="btn btn-g" type="button" onclick="closeRemittanceModal('rmDetailModal')">Close</button>`];
-  if (rmDashboardRole() === 'court_owner' && ['awaiting-payment','overdue','rejected'].includes(status)) actions.push(`<button class="btn btn-p" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openRemittancePayment('${jsArg(rmRecordId(record))}')">Remit Now</button>`);
-  if (rmDashboardRole() === 'court_owner' && ['awaiting-payment','rejected'].includes(status) && rmAmountSettled(record) === 0) actions.unshift(`<button class="btn btn-d" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openRemittanceCancellation('${jsArg(rmRecordId(record))}')">Cancel Prepared Record</button>`);
+  if (rmDashboardRole() === 'court_owner' && !rmOwnerReceivedDraft(record) && ['awaiting-payment','overdue','rejected'].includes(status)) actions.push(`<button class="btn btn-p" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openRemittancePayment('${jsArg(rmRecordId(record))}')">Remit Now</button>`);
+  if (rmDashboardRole() === 'court_owner' && !rmOwnerReceivedDraft(record) && ['awaiting-payment','rejected'].includes(status) && rmAmountSettled(record) === 0) actions.unshift(`<button class="btn btn-d" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openRemittanceCancellation('${jsArg(rmRecordId(record))}')">Cancel Prepared Record</button>`);
+  if (rmDashboardRole() === 'owner' && ['awaiting-payment','overdue'].includes(status) && rmOwnerReceivedDraft(record) && rmAmountSettled(record) === 0) {
+    actions.push(`<button class="btn btn-p" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openReceivedRemittancePost('${jsArg(rmRecordId(record))}')">Finish Posting</button>`);
+    actions.unshift(`<button class="btn btn-d" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openReceivedRemittanceCancellation('${jsArg(rmRecordId(record))}')">Release Frozen Balance</button>`);
+  }
   if (rmDashboardRole() === 'owner' && status === 'under-review') actions.push(`<button class="btn btn-p" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openRemittanceReview('${jsArg(rmRecordId(record))}')">Review Proof</button>`);
   $('rmDetailActions').innerHTML = actions.join('');
   openRemittanceModal('rmDetailModal');
@@ -9412,25 +9683,61 @@ async function openRemittanceDetails(id) {
 function openRemittanceCancellation(id) {
   if (rmDashboardRole() !== 'court_owner') { toast('Only a court owner can cancel a prepared remittance.', 'err'); return; }
   const record = rmRecordById(id);
+  if (record && rmOwnerReceivedDraft(record)) { toast('A System Owner external-receipt record cannot use the normal court-owner cancellation flow.', 'err'); return; }
   if (!record || !['awaiting-payment','rejected'].includes(rmStatusKey(record)) || rmAmountSettled(record) > 0) { toast('Only a fully unpaid prepared or rejected remittance can be cancelled.', 'err'); return; }
   $('rmCancelId').value = rmRecordId(record);
+  $('rmCancelMode').value = 'court_owner';
   $('rmCancelReason').value = '';
+  $('rmCancelReason').minLength = 1;
   $('rmCancelTitle').textContent = `CANCEL ${rmRecordRef(record)}`;
+  $('rmCancelSubtitle').textContent = 'Return its bookings to the live accumulated balance';
+  $('rmCancelInfo').innerHTML = 'This does not delete the record. The frozen booking fees become eligible again, and the cancellation remains in the audit history.';
+  $('rmCancelConfirmBtn').textContent = 'Cancel & Return Balance';
+  openRemittanceModal('rmCancelModal', '#rmCancelReason');
+}
+
+function openReceivedRemittanceCancellation(id) {
+  if (rmDashboardRole() !== 'owner') { toast('Only the system owner can release an external-receipt draft.', 'err'); return; }
+  const record = rmRecordById(id);
+  if (!record || !rmOwnerReceivedDraft(record) || !['awaiting-payment','overdue'].includes(rmStatusKey(record)) || rmAmountSettled(record) > 0) {
+    toast('Only an unpaid System Owner external-receipt draft can be released.', 'err');
+    return;
+  }
+  _rmState.receivedCancelKey = rmReceivedActionKey('cancel-received');
+  $('rmCancelId').value = rmRecordId(record);
+  $('rmCancelMode').value = 'received_owner';
+  $('rmCancelReason').value = '';
+  $('rmCancelReason').minLength = 10;
+  $('rmCancelTitle').textContent = `RELEASE ${rmRecordRef(record)}`;
+  $('rmCancelSubtitle').textContent = 'Cancel this unfinished external-receipt draft';
+  $('rmCancelInfo').innerHTML = '<strong>This cannot be undone from this dialog.</strong> No payment will be recorded. Every frozen booking fee returns to the live accumulated balance, while the cancelled draft and your reason remain in the permanent audit history.';
+  $('rmCancelConfirmBtn').textContent = 'Release Frozen Balance';
   openRemittanceModal('rmCancelModal', '#rmCancelReason');
 }
 
 async function submitRemittanceCancellation(event) {
   event?.preventDefault();
   const id = $('rmCancelId').value;
+  const mode = $('rmCancelMode').value;
   const reason = $('rmCancelReason').value.trim();
-  if (!id || !reason) { toast('Enter a cancellation reason.', 'err'); $('rmCancelReason').focus(); return; }
+  if (!id || !reason || (mode === 'received_owner' && reason.length < 10)) { toast(mode === 'received_owner' ? 'Enter a clear release reason (at least 10 characters).' : 'Enter a cancellation reason.', 'err'); $('rmCancelReason').focus(); return; }
   const button = $('rmCancelConfirmBtn');
   rmSetBusy(button, true, 'Returning balance...');
   try {
-    if (typeof DB.cancelBookingFeeRemittance !== 'function') throw new Error('The cancellation service is unavailable.');
-    await DB.cancelBookingFeeRemittance(id, reason);
+    const record = rmRecordById(id);
+    if (mode === 'received_owner') {
+      if (rmDashboardRole() !== 'owner' || !record || !rmOwnerReceivedDraft(record)) throw new Error('This external-receipt draft is no longer available to release.');
+      if (typeof DB.cancelReceivedBookingFeeRemittance !== 'function') throw new Error('The external-draft release service is unavailable.');
+      await DB.cancelReceivedBookingFeeRemittance(id, { reason, idempotencyKey:_rmState.receivedCancelKey });
+    } else {
+      if (rmDashboardRole() !== 'court_owner' || (record && rmOwnerReceivedDraft(record))) throw new Error('This record cannot use the normal court-owner cancellation flow.');
+      if (typeof DB.cancelBookingFeeRemittance !== 'function') throw new Error('The cancellation service is unavailable.');
+      await DB.cancelBookingFeeRemittance(id, reason);
+    }
     closeRemittanceModal('rmCancelModal');
-    toast('Prepared remittance cancelled. Its booking fees are back in the live accumulated balance.', 'inf');
+    toast(mode === 'received_owner'
+      ? 'External-receipt draft released. Its booking fees are back in the live accumulated balance.'
+      : 'Prepared remittance cancelled. Its booking fees are back in the live accumulated balance.', 'inf');
     await renderRemittances();
   } catch (error) {
     console.error('[submitRemittanceCancellation]', error);
