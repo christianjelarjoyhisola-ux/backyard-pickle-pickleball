@@ -1972,7 +1972,7 @@ window.DB = {
     const session = await _pbAuthenticatedSession();
     const role = String(window.Auth?.getSession?.()?.role || '').toLowerCase();
     if (!session || !['owner', 'court_owner'].includes(role)) {
-      const error = new Error('Only a System Owner or Court Owner can confirm an expired payment.');
+      const error = new Error('Only a System Owner or Court Owner can confirm a post-start payment.');
       error.code = 'LATE_CONFIRMATION_ACCESS_DENIED';
       throw error;
     }

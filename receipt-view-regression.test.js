@@ -25,19 +25,24 @@ test('manager image availability flags are accepted without exposing storage pat
   assert.match(database, /receiptImageAvailable \? 'protected' : null/);
 });
 
-test('expired past receipts expose an owner-only late confirmation action', () => {
+test('started pending or expired receipts expose an owner-only confirmation action', () => {
   assert.match(admin, /function canLateConfirmBooking\(b\)/);
   assert.match(admin, /\['owner','court_owner'\]\.includes\(role\)/);
   assert.match(admin, /b\?\.receiptVerificationId/);
-  assert.match(admin, /✅ Confirm Payment/);
+  assert.match(admin, /\['pending','forfeited'\]\.includes/);
+  assert.match(admin, /startMs <= Date\.now\(\)/);
+  assert.match(admin, /✅ Review &amp; Confirm/);
   assert.match(admin, /Confirm Paid — Past Booking/);
   assert.match(database, /async confirmExpiredPayment\(ref, note\)/);
   assert.match(database, /decision: 'late_approve'/);
 });
 
-test('late confirmation records payment without reopening released court time', () => {
-  assert.match(admin, /records the expired past booking as completed and does not reopen its released court time/);
-  assert.match(admin, /records it as PAID and COMPLETED without reopening the court time/);
+test('post-start copy distinguishes ongoing reservation from ended accounting', () => {
+  assert.match(admin, /function lateConfirmationPhase\(b\)/);
+  assert.match(admin, /Past court time will not be reopened/);
+  assert.match(admin, /original slots still have no conflict/);
+  assert.match(admin, /This records it as PAID and COMPLETED without reopening past court time/);
+  assert.match(admin, /reserves its original court time only if no conflicting booking or block exists/);
 });
 
 test('future forfeited receipts expose atomic restore and confirm', () => {
