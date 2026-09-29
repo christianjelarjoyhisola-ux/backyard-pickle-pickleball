@@ -8696,6 +8696,23 @@ function rmAmountSettled(record) {
   return Math.max(0, rmNumber(rmPick(record, 'amount_settled', 'amountSettled', 'settled_amount', 'settledAmount')));
 }
 
+function rmCreditApplied(record) {
+  return Math.max(0, rmNumber(rmPick(record, 'credit_applied', 'creditApplied')));
+}
+
+function rmCashReceived(record) {
+  const cash = rmPick(record, 'cash_received', 'cashReceived');
+  return cash === undefined ? Math.max(0, rmAmountSettled(record) - rmCreditApplied(record)) : Math.max(0, rmNumber(cash));
+}
+
+function rmAvailableCredit() {
+  return Math.max(0, rmNumber(rmPick(_rmState.dashboard, 'credit_available', 'creditAvailable')));
+}
+
+function rmLiveCashDue(live) {
+  return Math.max(0, rmAmountDue(live) - rmAvailableCredit());
+}
+
 function rmAmountRemaining(record) {
   const explicit = rmPick(record, 'remaining_balance', 'remainingBalance', 'amount_remaining', 'amountRemaining');
   if (explicit !== undefined) return Math.max(0, rmNumber(explicit));
@@ -9013,9 +9030,9 @@ function rmRecordCard(record) {
   ];
   if (role === 'court_owner' && !rmOwnerReceivedDraft(record) && ['awaiting-payment','overdue','rejected'].includes(status)) {
     actions.push(`<button class="btn btn-p btn-sm" type="button" onclick="openRemittancePayment('${jsArg(id)}')">Remit Now</button>`);
-    if (['awaiting-payment','rejected'].includes(status) && rmAmountSettled(record) === 0) actions.push(`<button class="btn btn-d btn-sm" type="button" onclick="openRemittanceCancellation('${jsArg(id)}')">Cancel</button>`);
+    if (['awaiting-payment','rejected'].includes(status) && rmCashReceived(record) === 0) actions.push(`<button class="btn btn-d btn-sm" type="button" onclick="openRemittanceCancellation('${jsArg(id)}')">Cancel</button>`);
   }
-  if (role === 'owner' && ['awaiting-payment','overdue'].includes(status) && rmOwnerReceivedDraft(record) && rmAmountSettled(record) === 0) {
+  if (role === 'owner' && ['awaiting-payment','overdue'].includes(status) && rmOwnerReceivedDraft(record) && rmCashReceived(record) === 0) {
     actions.push(`<button class="btn btn-p btn-sm" type="button" onclick="openReceivedRemittancePost('${jsArg(id)}')">Finish Posting</button>`);
     actions.push(`<button class="btn btn-d btn-sm" type="button" onclick="openReceivedRemittanceCancellation('${jsArg(id)}')">Release Frozen Balance</button>`);
   }
@@ -9122,7 +9139,9 @@ async function renderRemittances({ announce = false } = {}) {
       : 'See the venue’s live booking-fee balance, prepare an exact cutoff, submit proof, and keep every settlement record.';
     $('rmRolePill').textContent = role === 'owner' ? 'System Owner · Verification' : 'Court Owner · Remittance';
     $('rmLiveStat').textContent = fmt(liveAmount);
-    $('rmLiveStatNote').textContent = liveAmount > 0 ? 'Available for the next cutoff' : 'No unsettled booking fees';
+    $('rmLiveStatNote').textContent = rmAvailableCredit() > 0
+      ? `${fmt(rmAvailableCredit())} cancellation credit · ${fmt(Math.max(0, liveAmount - rmAvailableCredit()))} net due at the next cutoff`
+      : liveAmount > 0 ? 'Available for the next cutoff' : 'No unsettled booking fees';
     $('rmReservationStat').textContent = liveReservations === null ? '\u2014' : rmMetricNumber(liveReservations, 0);
     $('rmReservationStatNote').textContent = `${rmMetricNumber(liveBookings, 0)} court booking${liveBookings === 1 ? '' : 's'} in the fee ledger`;
     $('rmHoursStat').textContent = liveHours === null ? '\u2014' : flatOnly ? 'N/A' : rmMetricNumber(liveHours);
@@ -9362,7 +9381,7 @@ async function openReceivedRemittancePost(id = '') {
     if (!record) { toast('Prepared remittance not found. Please refresh.', 'err'); return; }
     try { record = await rmLoadRecordDetail(id); }
     catch (error) { console.error('[openReceivedRemittancePost]', error); toast(error?.message || 'Could not load the prepared remittance.', 'err'); return; }
-    if (!['awaiting-payment','overdue'].includes(rmStatusKey(record)) || !rmOwnerReceivedDraft(record) || rmAmountSettled(record) > 0) {
+    if (!['awaiting-payment','overdue'].includes(rmStatusKey(record)) || !rmOwnerReceivedDraft(record) || rmCashReceived(record) > 0) {
       toast('Only an unfinished System Owner-posted remittance can be resumed here.', 'err');
       return;
     }
@@ -9371,9 +9390,9 @@ async function openReceivedRemittancePost(id = '') {
   } else {
     if (_rmState.active.length > 0) { toast('Finish the active remittance record before posting another payment.', 'err'); return; }
     const live = rmPick(_rmState.dashboard, 'live', 'current', 'accumulated', 'live_balance', 'liveBalance') || {};
-    amount = rmAmountDue(live);
+    amount = rmLiveCashDue(live);
     record = live;
-    if (amount <= 0) { toast('There is no accumulated booking-fee balance to post.', 'err'); return; }
+    if (amount <= 0) { toast('No payment is due after cancellation credits. The court owner can prepare the remittance on its scheduled date to apply the credit.', 'inf'); return; }
   }
   if (amount <= 0) { toast('This remittance has no remaining balance.', 'err'); return; }
 
@@ -9620,12 +9639,13 @@ function rmBookingCard(item) {
   const units = Math.max(0, rmNumber(rmPick(item, 'fee_units', 'feeUnits', 'duration', 'hours', 'billable_hours', 'billableHours')));
   const rate = Math.max(0, rmNumber(rmPick(item, 'fee_rate', 'feeRate')));
   const fee = Math.max(0, rmNumber(rmPick(item, 'booking_fee', 'bookingFee', 'fee_amount', 'feeAmount', 'platform_fee', 'platformFee', 'amount')));
+  const released = !!rmPick(item, 'released_at', 'releasedAt');
   const formula = !hasFeeBasis
     ? 'Legacy calculation not recorded'
     : type === 'flat'
       ? `Flat court-booking fee \u00d7 ${fmt(rate)}`
       : `${rmMetricNumber(units)} court-hr${units === 1 ? '' : 's'} \u00d7 ${fmt(rate)}/hr`;
-  return `<div class="rm-booking"><div><strong>${esc(ref)}${customer ? ` · ${esc(customer)}` : ''}</strong><span>${groupRef ? `Reservation ${esc(groupRef)} · ` : ''}${esc(court)}</span></div><div><strong>${esc(formula)}</strong><span>${earnedAt ? `Fee earned ${esc(rmDateTime(earnedAt))}` : (bookedAt ? esc(rmDateTime(bookedAt)) : 'Reference retained for audit')}</span></div><div class="rm-booking-fee">${hasFeeBasis ? fmt(fee) : '\u2014'}</div></div>`;
+  return `<div class="rm-booking"><div><strong>${esc(ref)}${customer ? ` · ${esc(customer)}` : ''}</strong><span>${groupRef ? `Reservation ${esc(groupRef)} · ` : ''}${esc(court)}</span></div><div><strong>${esc(formula)}</strong><span>${released ? `Removed from this remittance · ${esc(rmPick(item, 'release_reason', 'releaseReason') || 'Reference retained for audit')}` : earnedAt ? `Fee earned ${esc(rmDateTime(earnedAt))}` : (bookedAt ? esc(rmDateTime(bookedAt)) : 'Reference retained for audit')}</span></div><div class="rm-booking-fee">${released ? fmt(0) : hasFeeBasis ? fmt(fee) : '\u2014'}</div></div>`;
 }
 
 async function openRemittanceDetails(id) {
@@ -9647,7 +9667,7 @@ async function openRemittanceDetails(id) {
   const billableHours = rmBillableHours(record);
   const flatBookingCount = rmFlatBookingCount(record);
   const billableHoursLabel = billableHours === null ? 'Not recorded' : (billableHours === 0 && flatBookingCount > 0) ? 'Not applicable - flat fee' : `${rmMetricNumber(billableHours)} hr${billableHours === 1 ? '' : 's'}`;
-  const remainingLabel = status === 'cancelled' ? 'Released back to live balance' : fmt(rmAmountRemaining(record));
+  const remainingLabel = status === 'cancelled' ? 'No payment due; see released fee details' : fmt(rmAmountRemaining(record));
   const eventItems = rmRows(rmPick(record, 'events', 'remittance_events', 'remittanceEvents', 'audit_events', 'auditEvents'));
   const note = String(rmPick(payment, 'note', 'submitted_note', 'submittedNote', 'review_note', 'reviewNote') || rmPick(record, 'note', 'paid_note', 'paidNote', 'review_note', 'reviewNote') || '—');
   const verifiedBy = String(rmPick(record, 'settled_by_name', 'settledByName', 'verified_by_name', 'verifiedByName', 'paid_by_name', 'paidByName', 'paid_by_user_id', 'paidByUserId') || rmPick(payment, 'reviewed_by_name', 'reviewedByName', 'reviewed_by', 'reviewedBy') || '—');
@@ -9670,7 +9690,9 @@ async function openRemittanceDetails(id) {
       <div class="rm-field"><div class="rm-field-label">Court Bookings</div><div class="rm-field-value">${rmMetricNumber(bookingRows, 0)}</div></div>
       <div class="rm-field"><div class="rm-field-label">Billable Court-Hours</div><div class="rm-field-value">${esc(billableHoursLabel)}</div></div>
       <div class="rm-field"><div class="rm-field-label">Latest Amount Submitted</div><div class="rm-field-value money">${fmt(rmPaymentAmount(record))}</div></div>
-      <div class="rm-field"><div class="rm-field-label">Amount Accepted</div><div class="rm-field-value money">${fmt(rmAmountSettled(record) || rmAcceptedAmount(record) || (status === 'settled' ? rmAmountDue(record) : 0))}</div></div>
+      <div class="rm-field"><div class="rm-field-label">Cash Received</div><div class="rm-field-value money">${fmt(rmCashReceived(record))}</div></div>
+      <div class="rm-field"><div class="rm-field-label">Credit Applied</div><div class="rm-field-value money">${fmt(rmCreditApplied(record))}</div></div>
+      <div class="rm-field"><div class="rm-field-label">Credit Created by Cancellations</div><div class="rm-field-value money">${fmt(Math.max(0, rmNumber(rmPick(record, 'cancellation_credit', 'cancellationCredit'))))}</div></div>
       <div class="rm-field"><div class="rm-field-label">Remaining Balance</div><div class="rm-field-value${status === 'cancelled' ? '' : ' money'}">${esc(remainingLabel)}</div></div>
     </div>
     <section class="rm-detail-section"><div class="rm-detail-title">Fee calculation</div><div class="rm-fee-breakdown">${rmFeeBreakdownHtml(record)}</div></section>
@@ -9686,8 +9708,8 @@ async function openRemittanceDetails(id) {
     <section class="rm-detail-section"><div class="rm-detail-title">Included court bookings</div><div class="rm-booking-list">${bookingItems.length ? bookingItems.map(rmBookingCard).join('') : '<div class="rm-empty" style="min-height:110px"><div>Individual booking details are not available for this legacy record.</div></div>'}</div></section>`;
   const actions = [`<button class="btn btn-g" type="button" onclick="closeRemittanceModal('rmDetailModal')">Close</button>`];
   if (rmDashboardRole() === 'court_owner' && !rmOwnerReceivedDraft(record) && ['awaiting-payment','overdue','rejected'].includes(status)) actions.push(`<button class="btn btn-p" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openRemittancePayment('${jsArg(rmRecordId(record))}')">Remit Now</button>`);
-  if (rmDashboardRole() === 'court_owner' && !rmOwnerReceivedDraft(record) && ['awaiting-payment','rejected'].includes(status) && rmAmountSettled(record) === 0) actions.unshift(`<button class="btn btn-d" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openRemittanceCancellation('${jsArg(rmRecordId(record))}')">Cancel Prepared Record</button>`);
-  if (rmDashboardRole() === 'owner' && ['awaiting-payment','overdue'].includes(status) && rmOwnerReceivedDraft(record) && rmAmountSettled(record) === 0) {
+  if (rmDashboardRole() === 'court_owner' && !rmOwnerReceivedDraft(record) && ['awaiting-payment','rejected'].includes(status) && rmCashReceived(record) === 0) actions.unshift(`<button class="btn btn-d" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openRemittanceCancellation('${jsArg(rmRecordId(record))}')">Cancel Prepared Record</button>`);
+  if (rmDashboardRole() === 'owner' && ['awaiting-payment','overdue'].includes(status) && rmOwnerReceivedDraft(record) && rmCashReceived(record) === 0) {
     actions.push(`<button class="btn btn-p" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openReceivedRemittancePost('${jsArg(rmRecordId(record))}')">Finish Posting</button>`);
     actions.unshift(`<button class="btn btn-d" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openReceivedRemittanceCancellation('${jsArg(rmRecordId(record))}')">Release Frozen Balance</button>`);
   }
@@ -9700,7 +9722,7 @@ function openRemittanceCancellation(id) {
   if (rmDashboardRole() !== 'court_owner') { toast('Only a court owner can cancel a prepared remittance.', 'err'); return; }
   const record = rmRecordById(id);
   if (record && rmOwnerReceivedDraft(record)) { toast('A System Owner external-receipt record cannot use the normal court-owner cancellation flow.', 'err'); return; }
-  if (!record || !['awaiting-payment','rejected'].includes(rmStatusKey(record)) || rmAmountSettled(record) > 0) { toast('Only a fully unpaid prepared or rejected remittance can be cancelled.', 'err'); return; }
+  if (!record || !['awaiting-payment','rejected'].includes(rmStatusKey(record)) || rmCashReceived(record) > 0) { toast('Only a fully unpaid prepared or rejected remittance can be cancelled.', 'err'); return; }
   $('rmCancelId').value = rmRecordId(record);
   $('rmCancelMode').value = 'court_owner';
   $('rmCancelReason').value = '';
@@ -9715,7 +9737,7 @@ function openRemittanceCancellation(id) {
 function openReceivedRemittanceCancellation(id) {
   if (rmDashboardRole() !== 'owner') { toast('Only the system owner can release an external-receipt draft.', 'err'); return; }
   const record = rmRecordById(id);
-  if (!record || !rmOwnerReceivedDraft(record) || !['awaiting-payment','overdue'].includes(rmStatusKey(record)) || rmAmountSettled(record) > 0) {
+  if (!record || !rmOwnerReceivedDraft(record) || !['awaiting-payment','overdue'].includes(rmStatusKey(record)) || rmCashReceived(record) > 0) {
     toast('Only an unpaid System Owner external-receipt draft can be released.', 'err');
     return;
   }
@@ -10215,7 +10237,7 @@ function applyPlatformVisibility() {
 
       <h4 style="margin:0 0 8px;color:var(--green);font-size:.85rem;letter-spacing:.6px;text-transform:uppercase">3. Booking Fee &amp; Accumulated Remittance</h4>
       <p id="agreeFeeIntro" style="margin:0 0 14px">In consideration of the platform access provided at no setup fee, one-time fee, monthly subscription fee, hidden fee, or other platform charge to the Court Owner, the Court Owner <strong>authorizes</strong> the Platform Provider to add the current System Owner-selected <strong>non-refundable booking fee</strong> to each customer transaction processed through the system. This fee is charged to and paid by the <strong>customer/player</strong>, not the Court Owner, and is separate from the court rental fee.<br><br>The System Owner sets the booking fee amount and charging method. The fee may be charged <strong>per booked hour per confirmed booking transaction</strong> or as a <strong>per confirmed booking transaction fee</strong>, added to the player's checkout, and included in the booking-period remittance statement based on booking date.</p>
-      <p id="agreeFeeBillable" style="margin:0 0 14px"><strong>When it applies.</strong> The configured booking fee applies only to a <strong>confirmed booking transaction</strong> made through the platform, meaning a booking that successfully reserved a court slot. Bookings that are cancelled before confirmation, rejected during payment verification, expired, or never held a slot are <strong>not charged</strong>.</p>
+      <p id="agreeFeeBillable" style="margin:0 0 14px"><strong>When it applies.</strong> The configured booking fee applies only to a <strong>confirmed booking transaction</strong> made through the platform, meaning a booking that successfully reserved a court slot. Cancelled bookings, including manual bookings and bookings cancelled after confirmation, earn <strong>no booking fee</strong>. Their fees are removed from remittance; any amount already remitted becomes a credit toward a future remittance. Bookings rejected during payment verification, expired, or never holding a slot are also <strong>not charged</strong>.</p>
       <p id="agreeFeeCollection" style="margin:0 0 14px"><strong>Collection.</strong> The Court Owner collects the configured booking fee from the customer together with the court rental fee at the time of booking, and holds the booking fee on behalf of the Platform Provider until remittance. The booking fee is not a fee charged to the Court Owner and is not part of the Court Owner's court rental revenue.</p>
       <p id="agreeFeeWeekly" style="margin:0 0 14px"><strong>Accumulated remittance every 14th.</strong> Eligible booking fees accumulate continuously until the Court Owner prepares remittance on the <strong>14th day of the month</strong>. At that moment, the system freezes an exact server-recorded cutoff in Asia/Manila time and creates a permanent snapshot of all eligible, unsettled confirmed booking transactions available before that cutoff. Each booking is included <strong>only once</strong>. Eligible bookings at or after the cutoff begin the next accumulated balance for the following 14th.</p>
       <p style="margin:0 0 14px"><strong>Due date &amp; method.</strong> The accumulated balance is scheduled for remittance on the <strong>14th of each month</strong>. The Court Owner prepares the exact cutoff, remits the frozen amount via <strong>GCash</strong> to the booking fee remittance account shown in the dashboard, and submits the transaction reference and receipt screenshot. The remittance becomes <strong>Settled</strong> only after the System Owner verifies the proof; its permanent record remains available in Remittance History.</p>
@@ -10332,7 +10354,7 @@ async function updateAgreementFeeCopy() {
   const setHtml = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
 
   setHtml('agreeFeeIntro', `In consideration of the platform access provided at no setup fee, one-time fee, monthly subscription fee, hidden fee, or other platform charge to the Court Owner, the Court Owner <strong>authorizes</strong> the Platform Provider to add the current System Owner-selected <strong>non-refundable booking fee of ${fee}</strong> to each customer transaction processed through the system. This fee is charged to and paid by the <strong>customer/player</strong>, not the Court Owner, and is separate from the court rental fee.<br><br>The System Owner sets the booking fee amount and charging method. The fee is currently configured as <strong>${feeMethod}</strong> at <strong>${fmt(cfg.amount)}</strong>, added to the player's checkout, and recorded in the running remittance ledger when the booking becomes eligible.`);
-  setHtml('agreeFeeBillable', `<strong>When it applies.</strong> The configured ${configuredFeeText} applies only to a <strong>confirmed booking transaction</strong> made through the platform, meaning a booking that successfully reserved a court slot. Bookings that are cancelled before confirmation, rejected during payment verification, expired, or never held a slot are <strong>not charged</strong>.`);
+  setHtml('agreeFeeBillable', `<strong>When it applies.</strong> The configured ${configuredFeeText} applies only to a <strong>confirmed booking transaction</strong> made through the platform, meaning a booking that successfully reserved a court slot. Cancelled bookings, including manual bookings and bookings cancelled after confirmation, earn <strong>no booking fee</strong>. Their fees are removed from remittance; any amount already remitted becomes a credit toward a future remittance. Bookings rejected during payment verification, expired, or never holding a slot are also <strong>not charged</strong>.`);
   setHtml('agreeFeeCollection', `<strong>Collection.</strong> The Court Owner collects the configured ${configuredFeeText} from the customer together with the court rental fee at the time of booking, and holds the booking fee on behalf of the Platform Provider until remittance. The booking fee is not a fee charged to the Court Owner and is not part of the Court Owner's court rental revenue.`);
   setHtml('agreeFeeWeekly', `<strong>Accumulated remittance every 14th.</strong> Eligible booking fees accumulate continuously until the Court Owner prepares remittance on the <strong>14th day of the month</strong>. The system then freezes the exact Asia/Manila server time and snapshots all eligible, unsettled confirmed booking transactions before that cutoff. At the current configuration, the fee calculation is <strong>${formula}</strong>. Each booking is included <strong>only once</strong>; eligible bookings at or after the cutoff start the next balance for the following 14th.`);
   setHtml('agreeFeeRevenue', `All court rental fees set by the Court Owner (e.g. ₱200/hr, ₱250/hr) belong <strong>exclusively to the Court Owner</strong>. The Platform Provider does not take any share of the court rental revenue. The Court Owner receives 100% of the court rental rate from every confirmed booking. Only the separate configured booking fee of <strong>${fee}</strong> paid by the customer is for the Platform Provider.`);
