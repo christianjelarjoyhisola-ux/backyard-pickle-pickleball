@@ -9,7 +9,8 @@ const database = fs.readFileSync(path.join(root, 'supabase-config.js'), 'utf8');
 
 test('system owner sees direct posting only for a live balance with no active remittance', () => {
   assert.match(admin, /id="rmPostReceivedBtn"[^>]+onclick="openReceivedRemittancePost\(\)"/);
-  assert.match(admin, /role === 'owner' && liveAmount > 0 && active\.length === 0/);
+  assert.match(admin, /role === 'owner' && liveCashDue > 0 && active\.length === 0/);
+  assert.match(admin, /Post Received \$\{fmt\(liveCashDue\)\}/);
   assert.match(admin, /postReceivedBtn\.hidden = !ownerCanPostReceived/);
 });
 

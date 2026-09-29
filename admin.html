@@ -9175,14 +9175,15 @@ async function renderRemittances({ announce = false } = {}) {
     const prepareBtn = $('rmPrepareBtn');
     const postReceivedBtn = $('rmPostReceivedBtn');
     const liveAction = $('rmLiveAction');
-    const ownerCanPostReceived = role === 'owner' && liveAmount > 0 && active.length === 0;
+    const liveCashDue = rmLiveCashDue(live);
+    const ownerCanPostReceived = role === 'owner' && liveCashDue > 0 && active.length === 0;
     liveAction.hidden = role !== 'court_owner' && !ownerCanPostReceived;
     prepareBtn.hidden = role !== 'court_owner';
     prepareBtn.disabled = !canPrepare.allowed || liveAmount <= 0;
     prepareBtn.textContent = liveAmount > 0 ? `Prepare ${fmt(liveAmount)}` : 'Prepare Remittance';
     postReceivedBtn.hidden = !ownerCanPostReceived;
     postReceivedBtn.disabled = !ownerCanPostReceived;
-    postReceivedBtn.textContent = liveAmount > 0 ? `Post Received ${fmt(liveAmount)}` : 'Post Received Payment';
+    postReceivedBtn.textContent = liveCashDue > 0 ? `Post Received ${fmt(liveCashDue)}` : 'Post Received Payment';
     $('rmPrepareHint').textContent = role === 'owner'
       ? (active.length > 0 ? 'Finish the active remittance record before posting another received payment.' : liveAmount > 0 ? 'Use only after the court owner’s payment has reached your account.' : 'No accumulated booking fees are available to post.')
       : canPrepare.reason || (liveAmount <= 0 ? 'The button activates when an eligible fee is available.' : canPrepare.allowed ? 'The exact cutoff is created only after confirmation.' : `Next scheduled payment: ${nextDueLabel}`);
