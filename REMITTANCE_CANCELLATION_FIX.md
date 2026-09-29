@@ -22,4 +22,7 @@ database with Auth/Storage fixtures, including an existing-data repair check.
 See the backend's `docs/cancelled-booking-remittances.md` for details and a known
 unrelated failure in an older cancellation test fixture.
 
-The commits are local. No production database or website has been changed.
+Production backend migration applied and verified on 2026-09-29. One cancelled
+Backyard Pickle fee of PHP 40 was released: earned fees changed from PHP 3,024 to
+PHP 2,984, the PHP 3,024 cash payment was preserved, and PHP 40 became available
+venue credit. No cancelled booking fee remains in an active remittance item.
