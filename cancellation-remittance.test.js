@@ -55,3 +55,51 @@ test('released fee is retained for audit but displayed as zero, not earned', () 
   assert.match(active, /rm-booking-fee">PHP 8\.00/);
   assert.match(active, /Fee earned/);
 });
+
+test('cutoff opens details for System Owners and credit-settled records, without requesting payment', async () => {
+  const source = admin.match(/async function prepareRemittanceNow\([^]*?\n\}/)[0];
+  for (const [role, status, destination] of [
+    ['owner', 'due', 'details'], ['court_owner', 'settled', 'details'],
+    ['court_owner', 'due', 'payment'],
+  ]) {
+    const visits = [];
+    const context = vm.createContext({
+      $: () => ({}), rmSetBusy: () => {}, toast: () => {},
+      DB: { prepareBookingFeeRemittance: async () => ({ remittance: { id: 'cutoff-1', status } }) },
+      closeRemittanceModal: () => {}, renderRemittances: async () => {},
+      rmDashboardRole: () => role, rmStatusKey: record => record.status,
+      rmRecordId: record => record?.id, _rmState: { active: [] },
+      openRemittanceDetails: async id => visits.push(['details', id]),
+      openRemittancePayment: async id => visits.push(['payment', id]), console,
+    });
+    vm.runInContext(source, context);
+    await context.prepareRemittanceNow();
+    assert.deepEqual(visits, [[destination, 'cutoff-1']]);
+  }
+});
+
+test('System Owner cutoff respects the backend eligibility decision', () => {
+  const context = loadHelpers();
+  const fields = {};
+  const messages = [];
+  let opened = false;
+  Object.assign(context, {
+    $: id => fields[id] ||= {}, rmDashboardRole: () => 'owner',
+    toast: message => messages.push(message),
+    rmReservationCount: () => 1, rmBookingCount: () => 1,
+    rmBillableHours: () => 1, rmFlatBookingCount: () => 0,
+    rmFeeBreakdownHtml: () => '', rmCoverageLabel: () => 'Current fees',
+    rmDateOnly: () => 'Oct 14', openRemittanceModal: () => { opened = true; },
+  });
+  for (const name of ['rmCanPrepareInfo', 'openRemittancePrepare']) {
+    vm.runInContext(admin.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))[0], context);
+  }
+  context._rmState.dashboard = { live: { amount_due: 100 }, can_prepare: { allowed: false, reason: 'Active cutoff exists' } };
+  context.openRemittancePrepare();
+  assert.equal(opened, false);
+  assert.equal(messages[0], 'Active cutoff exists');
+  context._rmState.dashboard.can_prepare.allowed = true;
+  context.openRemittancePrepare();
+  assert.equal(opened, true);
+  assert.equal(fields.rmPrepareTitle.textContent, 'CUT OFF REMITTANCE');
+});

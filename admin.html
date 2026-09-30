@@ -3173,7 +3173,7 @@ tr:hover td { background: var(--bg2); }
         <div><div class="rm-hero-label">Current accumulated balance</div><div class="rm-hero-title" id="rmPrepareCoverage">From the first unsettled eligible booking through the exact preparation time</div></div>
         <div class="rm-hero-amount" id="rmPrepareAmount">&#8369;0.00</div>
       </div>
-      <div class="rm-info-note"><span aria-hidden="true">&#9432;</span><span><strong>The database will set the exact cutoff.</strong> Included bookings are frozen so they cannot be counted twice. Any eligible booking at or after that cutoff automatically starts the next remittance cycle.</span></div>
+      <div class="rm-info-note"><span aria-hidden="true">&#9432;</span><span><strong>The database will set the exact cutoff.</strong> Included bookings are frozen so they cannot be counted twice. New eligible bookings start the next remittance cycle. Available credits are applied automatically. <strong>This does not record a cash payment.</strong></span></div>
       <div class="rm-detail-grid">
         <div class="rm-field"><div class="rm-field-label">Reservations</div><div class="rm-field-value" id="rmPrepareReservations">0</div></div>
         <div class="rm-field"><div class="rm-field-label">Court Bookings</div><div class="rm-field-value" id="rmPrepareBookings">0</div></div>
@@ -9169,7 +9169,7 @@ async function renderRemittances({ announce = false } = {}) {
     $('rmNextDuePill').textContent = `${duePrefix}: ${nextDueLabel}`;
     $('rmCycleTitle').textContent = dueKey === todayKey ? 'Today is remittance day' : dueKey && dueKey < todayKey ? 'The remittance date has passed' : 'Remittance is scheduled every 14th';
     $('rmCycleCopy').textContent = role === 'owner'
-      ? 'Court owners freeze the exact balance when they prepare payment. You verify the submitted proof before it becomes settled.'
+      ? 'Cut off the current balance now, then verify the court owner’s payment when it arrives.'
       : 'Your balance keeps accumulating until you prepare payment. The database freezes the exact cutoff at that moment.';
 
     const prepareBtn = $('rmPrepareBtn');
@@ -9177,15 +9177,15 @@ async function renderRemittances({ announce = false } = {}) {
     const liveAction = $('rmLiveAction');
     const liveCashDue = rmLiveCashDue(live);
     const ownerCanPostReceived = role === 'owner' && liveCashDue > 0 && active.length === 0;
-    liveAction.hidden = role !== 'court_owner' && !ownerCanPostReceived;
-    prepareBtn.hidden = role !== 'court_owner';
+    liveAction.hidden = !['owner','court_owner'].includes(role);
+    prepareBtn.hidden = !['owner','court_owner'].includes(role);
     prepareBtn.disabled = !canPrepare.allowed || liveAmount <= 0;
-    prepareBtn.textContent = liveAmount > 0 ? `Prepare ${fmt(liveAmount)}` : 'Prepare Remittance';
+    prepareBtn.textContent = role === 'owner' ? 'Cut Off Now' : liveAmount > 0 ? `Prepare ${fmt(liveAmount)}` : 'Prepare Remittance';
     postReceivedBtn.hidden = !ownerCanPostReceived;
     postReceivedBtn.disabled = !ownerCanPostReceived;
     postReceivedBtn.textContent = liveCashDue > 0 ? `Post Received ${fmt(liveCashDue)}` : 'Post Received Payment';
     $('rmPrepareHint').textContent = role === 'owner'
-      ? (active.length > 0 ? 'Finish the active remittance record before posting another received payment.' : liveAmount > 0 ? 'Use only after the court owner’s payment has reached your account.' : 'No accumulated booking fees are available to post.')
+      ? canPrepare.reason || 'Cut off the balance without recording payment. Use Post Received only for money already received.'
       : canPrepare.reason || (liveAmount <= 0 ? 'The button activates when an eligible fee is available.' : canPrepare.allowed ? 'The exact cutoff is created only after confirmation.' : `Next scheduled payment: ${nextDueLabel}`);
 
     renderRemittanceRecords();
@@ -9237,11 +9237,12 @@ function remittanceModalKeydown(event) {
 }
 
 function openRemittancePrepare() {
-  if (rmDashboardRole() !== 'court_owner') { toast('Only a court owner can prepare remittance.', 'err'); return; }
+  if (!['owner','court_owner'].includes(rmDashboardRole())) { toast('Only a System Owner or court owner can prepare remittance.', 'err'); return; }
   const live = rmPick(_rmState.dashboard, 'live', 'current', 'accumulated', 'live_balance', 'liveBalance') || {};
   const canPrepare = rmCanPrepareInfo(_rmState.dashboard || {});
   const amount = rmAmountDue(live);
   if (!canPrepare.allowed || amount <= 0) { toast(canPrepare.reason || 'There is no eligible balance to prepare.', 'err'); return; }
+  $('rmPrepareTitle').textContent = rmDashboardRole() === 'owner' ? 'CUT OFF REMITTANCE' : 'PREPARE REMITTANCE';
   $('rmPrepareAmount').textContent = fmt(amount);
   const reservations = rmReservationCount(live);
   const courtBookings = rmBookingCount(live);
@@ -9269,7 +9270,10 @@ async function prepareRemittanceNow() {
     await renderRemittances();
     const fallback = _rmState.active.find(record => rmStatusKey(record) === 'awaiting-payment');
     const id = preparedId || rmRecordId(fallback);
-    if (id) await openRemittancePayment(id);
+    if (id) {
+      if (rmDashboardRole() === 'owner' || rmStatusKey(prepared) === 'settled') await openRemittanceDetails(id);
+      else await openRemittancePayment(id);
+    }
   } catch (error) {
     console.error('[prepareRemittanceNow]', error);
     toast(error?.message || 'Could not prepare remittance.', 'err');
