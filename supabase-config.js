@@ -1791,14 +1791,38 @@ window.DB = {
       bookingDate: _pbAddCalendarDays(String(payload?.bookingDate || ''), startDayOffset),
       startTime: `${String(((startHour % 24) + 24) % 24).padStart(2, '0')}:00`,
     };
-    const result = await _invokeEdgeFunction(
-      `create-manual-booking?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
-      {
-        ...normalizedPayload,
-        tenantSlug: PB_TENANT_SLUG,
-      },
-      { preferDirect: true },
-    );
+    const requestBody = {
+      ...normalizedPayload,
+      tenantSlug: PB_TENANT_SLUG,
+    };
+    let result;
+    try {
+      result = await _invokeEdgeFunction(
+        `create-manual-booking?tenantSlug=${encodeURIComponent(PB_TENANT_SLUG)}`,
+        requestBody,
+        { preferDirect: true },
+      );
+    } catch (error) {
+      const isBrowserNetworkFailure = !error?.code && !error?.httpStatus &&
+        /load failed|failed to fetch|network(?:error| request)?/i.test(String(error?.message || error));
+      if (!isBrowserNetworkFailure) throw error;
+
+      // iOS Safari can fail a direct cross-origin Edge Function request before
+      // exposing the response. The client request ID makes this retry safe if
+      // the first request committed but its response was lost.
+      const retry = await _sb.functions.invoke('create-manual-booking', {
+        body: requestBody,
+        headers: { 'x-tenant-slug': PB_TENANT_SLUG },
+      });
+      if (retry.error) {
+        const failure = new Error(
+          'The booking service could not be reached. Check your connection and try again; no duplicate booking will be created.'
+        );
+        failure.code = 'MANUAL_BOOKING_NETWORK_ERROR';
+        throw failure;
+      }
+      result = retry.data;
+    }
     if (!result?.ok || !result.booking) {
       throw new Error('The manual booking service returned an invalid response.');
     }
