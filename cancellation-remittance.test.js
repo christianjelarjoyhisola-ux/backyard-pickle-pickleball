@@ -103,3 +103,22 @@ test('System Owner cutoff respects the backend eligibility decision', () => {
   assert.equal(opened, true);
   assert.equal(fields.rmPrepareTitle.textContent, 'CUT OFF REMITTANCE');
 });
+
+test('System Owner can upload a receipt to mark an unpaid cutoff paid', () => {
+  const context = loadHelpers();
+  for (const name of ['rmStatusKey', 'rmOwnerReceivedDraft', 'rmOwnerCanRecordReceived', 'rmDashboardRole']) {
+    vm.runInContext(admin.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))[0], context);
+  }
+  Object.assign(context, { rmRecordPayment: () => ({}), sess: { role: 'owner' } });
+  context._rmState.dashboard = { role: 'owner' };
+  const cutoff = { status: 'due', preparation_source: 'court_owner', amount_due: 16, amount_settled: 0 };
+  assert.equal(context.rmOwnerCanRecordReceived(cutoff), true);
+  assert.equal(context.rmOwnerCanRecordReceived({ ...cutoff, status: 'rejected' }), true);
+  for (const blocked of [
+    { status: 'submitted' }, { status: 'settled' },
+    { amount_settled: 16, credit_applied: 0 },
+    { preparation_source: 'system_owner_external_receipt', status: 'rejected' },
+  ]) assert.equal(context.rmOwnerCanRecordReceived({ ...cutoff, ...blocked }), false);
+  context._rmState.dashboard.role = 'court_owner';
+  assert.equal(context.rmOwnerCanRecordReceived(cutoff), false);
+});

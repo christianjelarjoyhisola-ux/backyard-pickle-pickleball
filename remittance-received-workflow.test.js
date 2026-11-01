@@ -58,7 +58,7 @@ test('deterministic proof retries are bound to the selected receipt bytes', () =
 test('unfinished owner exception records remain recoverable', () => {
   assert.match(admin, /\['draft','due','prepared'/);
   assert.match(admin, /source === 'system_owner_external_receipt'/);
-  assert.match(admin, />Finish Posting<\/button>/);
+  assert.match(admin, /rmOwnerReceivedDraft\(record\) \? 'Finish Posting' : 'Upload Receipt &amp; Mark Paid'\}<\/button>/);
   assert.match(admin, /system_owner_exception_reason/);
 });
 

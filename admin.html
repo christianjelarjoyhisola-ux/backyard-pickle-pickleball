@@ -8962,6 +8962,13 @@ function rmOwnerReceivedDraft(record) {
   return source === 'system_owner_external_receipt';
 }
 
+// The System Owner settles an unpaid cutoff from a receipt already received.
+function rmOwnerCanRecordReceived(record) {
+  const status = rmStatusKey(record);
+  const allowed = rmOwnerReceivedDraft(record) ? ['awaiting-payment','overdue'] : ['awaiting-payment','overdue','rejected'];
+  return rmDashboardRole() === 'owner' && allowed.includes(status) && rmCashReceived(record) === 0 && rmAmountRemaining(record) > 0;
+}
+
 function rmDashboardRole() {
   return String(rmPick(_rmState.dashboard, 'role', 'account_role', 'accountRole') || sess?.role || '');
 }
@@ -9051,9 +9058,9 @@ function rmRecordCard(record) {
     actions.push(`<button class="btn btn-p btn-sm" type="button" onclick="openRemittancePayment('${jsArg(id)}')">Remit Now</button>`);
     if (['awaiting-payment','rejected'].includes(status) && rmCashReceived(record) === 0) actions.push(`<button class="btn btn-d btn-sm" type="button" onclick="openRemittanceCancellation('${jsArg(id)}')">Cancel</button>`);
   }
-  if (role === 'owner' && ['awaiting-payment','overdue'].includes(status) && rmOwnerReceivedDraft(record) && rmCashReceived(record) === 0) {
-    actions.push(`<button class="btn btn-p btn-sm" type="button" onclick="openReceivedRemittancePost('${jsArg(id)}')">Finish Posting</button>`);
-    actions.push(`<button class="btn btn-d btn-sm" type="button" onclick="openReceivedRemittanceCancellation('${jsArg(id)}')">Release Frozen Balance</button>`);
+  if (rmOwnerCanRecordReceived(record)) {
+    actions.push(`<button class="btn btn-p btn-sm" type="button" onclick="openReceivedRemittancePost('${jsArg(id)}')">${rmOwnerReceivedDraft(record) ? 'Finish Posting' : 'Upload Receipt &amp; Mark Paid'}</button>`);
+    if (rmOwnerReceivedDraft(record)) actions.push(`<button class="btn btn-d btn-sm" type="button" onclick="openReceivedRemittanceCancellation('${jsArg(id)}')">Release Frozen Balance</button>`);
   }
   if (role === 'owner' && status === 'under-review') {
     actions.push(`<button class="btn btn-p btn-sm" type="button" onclick="openRemittanceReview('${jsArg(id)}')">Review Proof</button>`);
@@ -9204,7 +9211,7 @@ async function renderRemittances({ announce = false } = {}) {
     postReceivedBtn.disabled = !ownerCanPostReceived;
     postReceivedBtn.textContent = liveCashDue > 0 ? `Post Received ${fmt(liveCashDue)}` : 'Post Received Payment';
     $('rmPrepareHint').textContent = role === 'owner'
-      ? canPrepare.reason || 'Cut off the balance without recording payment. Use Post Received only for money already received.'
+      ? (active.some(rmOwnerCanRecordReceived) ? 'An unpaid cutoff is active. Open it and choose Upload Receipt & Mark Paid, or wait for the court owner’s proof.' : canPrepare.reason || 'Cut off the balance without recording payment. Use Post Received only for money already received.')
       : canPrepare.reason || (liveAmount <= 0 ? 'The button activates when an eligible fee is available.' : canPrepare.allowed ? 'The exact cutoff is created only after confirmation.' : `Next scheduled payment: ${nextDueLabel}`);
 
     renderRemittanceRecords();
@@ -9405,12 +9412,12 @@ async function openReceivedRemittancePost(id = '') {
     if (!record) { toast('Prepared remittance not found. Please refresh.', 'err'); return; }
     try { record = await rmLoadRecordDetail(id); }
     catch (error) { console.error('[openReceivedRemittancePost]', error); toast(error?.message || 'Could not load the prepared remittance.', 'err'); return; }
-    if (!['awaiting-payment','overdue'].includes(rmStatusKey(record)) || !rmOwnerReceivedDraft(record) || rmCashReceived(record) > 0) {
-      toast('Only an unfinished System Owner-posted remittance can be resumed here.', 'err');
+    if (!rmOwnerCanRecordReceived(record)) {
+      toast('Only an unpaid remittance with no receipt awaiting review can be marked paid here.', 'err');
       return;
     }
     amount = rmAmountRemaining(record);
-    reason = String(rmPick(record, 'system_owner_exception_reason', 'systemOwnerExceptionReason') || 'Payment received; completing the System Owner posting.');
+    reason = String(rmPick(record, 'system_owner_exception_reason', 'systemOwnerExceptionReason') || 'Court owner payment received for this remittance cutoff.');
   } else {
     if (_rmState.active.length > 0) { toast('Finish the active remittance record before posting another payment.', 'err'); return; }
     const live = rmPick(_rmState.dashboard, 'live', 'current', 'accumulated', 'live_balance', 'liveBalance') || {};
@@ -9425,8 +9432,8 @@ async function openReceivedRemittancePost(id = '') {
   _rmState.receivedPrepareKey = rmReceivedActionKey('prepare-received');
   _rmState.receivedRecordKey = rmReceivedActionKey('record-received');
   $('rmPostReceivedId').value = id ? rmRecordId(record) : '';
-  $('rmPostReceivedTitle').textContent = id ? `FINISH ${rmRecordRef(record)}` : 'POST RECEIVED PAYMENT';
-  $('rmPostReceivedSubtitle').textContent = id ? 'Attach the receipt and settle the already frozen owner record' : 'Record money already received from the court owner';
+  $('rmPostReceivedTitle').textContent = id ? `${rmOwnerReceivedDraft(record) ? 'FINISH' : 'MARK PAID'} ${rmRecordRef(record)}` : 'POST RECEIVED PAYMENT';
+  $('rmPostReceivedSubtitle').textContent = id ? 'Attach the receipt and settle this frozen remittance' : 'Record money already received from the court owner';
   $('rmPostReceivedCoverage').textContent = id ? rmCoverageLabel(record) : rmCoverageLabel(record, { live:true });
   $('rmPostReceivedAmount').textContent = fmt(_rmState.receivedExpectedAmount);
   $('rmPostReceivedMethod').value = 'bank_transfer';
@@ -9733,8 +9740,8 @@ async function openRemittanceDetails(id) {
   const actions = [`<button class="btn btn-g" type="button" onclick="closeRemittanceModal('rmDetailModal')">Close</button>`];
   if (rmDashboardRole() === 'court_owner' && !rmOwnerReceivedDraft(record) && ['awaiting-payment','overdue','rejected'].includes(status)) actions.push(`<button class="btn btn-p" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openRemittancePayment('${jsArg(rmRecordId(record))}')">Remit Now</button>`);
   if (rmDashboardRole() === 'court_owner' && !rmOwnerReceivedDraft(record) && ['awaiting-payment','rejected'].includes(status) && rmCashReceived(record) === 0) actions.unshift(`<button class="btn btn-d" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openRemittanceCancellation('${jsArg(rmRecordId(record))}')">Cancel Prepared Record</button>`);
-  if (rmDashboardRole() === 'owner' && ['awaiting-payment','overdue'].includes(status) && rmOwnerReceivedDraft(record) && rmCashReceived(record) === 0) {
-    actions.push(`<button class="btn btn-p" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openReceivedRemittancePost('${jsArg(rmRecordId(record))}')">Finish Posting</button>`);
+  if (rmOwnerCanRecordReceived(record)) actions.push(`<button class="btn btn-p" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openReceivedRemittancePost('${jsArg(rmRecordId(record))}')">${rmOwnerReceivedDraft(record) ? 'Finish Posting' : 'Upload Receipt &amp; Mark Paid'}</button>`);
+  if (rmOwnerCanRecordReceived(record) && rmOwnerReceivedDraft(record)) {
     actions.unshift(`<button class="btn btn-d" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openReceivedRemittanceCancellation('${jsArg(rmRecordId(record))}')">Release Frozen Balance</button>`);
   }
   if (rmDashboardRole() === 'owner' && status === 'under-review') actions.push(`<button class="btn btn-p" type="button" onclick="closeRemittanceModal('rmDetailModal',{restoreFocus:false});openRemittanceReview('${jsArg(rmRecordId(record))}')">Review Proof</button>`);
