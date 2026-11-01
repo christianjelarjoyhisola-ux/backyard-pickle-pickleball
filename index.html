@@ -8148,6 +8148,10 @@ async function submitPlatformBooking() {
       receiptFile: _receiptFile,
     });
     const automaticallyApproved = result.status === 'auto_approved';
+    if (result.status === 'rejected') {
+      toast(result.publicReason || 'Receipt rejected. Upload a successful-transfer receipt, not a failed transfer or QR code.', 'err');
+      return;
+    }
     const item = activeBookingItems()[0] || {};
     const server = access.booking || {};
     const booking = {
@@ -8193,6 +8197,10 @@ async function submitPlatformBooking() {
     // The upload may have reached the server even when the browser timed out or
     // lost the response. Reconcile against the protected status endpoint before
     // asking the customer to submit the same payment proof again.
+    if (error?.code === 'RECEIPT_REJECTED') {
+      toast(error.message, 'err');
+      return;
+    }
     try {
       const recovered = await DB.getPublicBookingStatus({
         bookingReference: access.reference,
@@ -9200,6 +9208,7 @@ function publicBookingStatusCopy(booking) {
   const status = String(booking?.status || '').toLowerCase();
   const payment = String(booking?.paymentStatus || '').toLowerCase();
   if (status === 'confirmed' || payment === 'paid') return 'Confirmed — your payment was approved.';
+  if (String(booking?.receipt?.status || '').toLowerCase() === 'rejected') return 'Receipt rejected — upload a successful-transfer receipt or contact staff. Your booking is not confirmed.';
   if (status === 'payment_review' || payment === 'pending') return 'Payment receipt received — awaiting staff review.';
   if (status === 'expired') return 'Expired — the payment window ended before approval.';
   if (status === 'cancelled' || payment === 'rejected') return 'Not confirmed — please contact Backyard Pickle if you already paid.';

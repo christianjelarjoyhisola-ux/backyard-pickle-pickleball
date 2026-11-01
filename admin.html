@@ -3631,7 +3631,9 @@ async function getBookingGroupByRef(ref) {
   const first = await DB.getBookingByRef(ref);
   if (!first) return null;
   const all = await DB.getBookings();
-  return groupBookings(all.filter(b => bookingGroupKey(b) === bookingGroupKey(first)))[0] || { ...first, items: [first], refs: [first.ref], primaryRef: first.ref };
+  // The list may be cached; keep the freshly fetched booking's review state.
+  const current = all.filter(b => b.ref !== first.ref).concat(first);
+  return groupBookings(current.filter(b => bookingGroupKey(b) === bookingGroupKey(first)))[0] || { ...first, items: [first], refs: [first.ref], primaryRef: first.ref };
 }
 async function updateBookingGroupByRef(ref, updates) {
   const group = await getBookingGroupByRef(ref);
@@ -3770,6 +3772,9 @@ const RECEIPT_FLAG_LABELS = {
   DATE_UNREADABLE:'Date unreadable', TIME_UNREADABLE:'Time unreadable', NUMBER_UNREADABLE:'Receiver number unreadable',
   BDO_PAY_UNREADABLE:'BDO Pay/InstaPay unreadable', MAYA_UNREADABLE:'Maya unreadable', BPI_UNREADABLE:'BPI success unreadable', BPI_CONFIRMATION_UNREADABLE:'BPI confirmation unreadable', BPI_TRANSACTION_UNREADABLE:'BPI transaction ref unreadable', INSTAPAY_QRPH_UNREADABLE:'InstaPay/QRPh unreadable', GXI_DESTINATION_UNREADABLE:'GXI/GCash destination unreadable', RECEIVER_NAME_UNREADABLE:'Receiver name unreadable',
   manual_review_required:'Manual review required', amount_not_detected:'Amount not detected',
+  failed_transfer:'Failed transfer — cannot approve',
+  qr_code_not_receipt:'QR code is not a payment receipt — rejected',
+  payment_success_not_proven:'No successful payment shown — upload a completed receipt',
   amount_mismatch:'Amount does not match', payment_reference_not_detected:'Reference not detected',
   payment_reference_mismatch:'Reference does not match', payment_method_unverified:'GCash receipt not verified',
   automatic_method_unsupported:'Automatic check not supported for this method',
@@ -4036,10 +4041,14 @@ function lateConfirmationPhase(b){
 function canRestoreConfirmBooking(b){
   const role = String(sess?.role || '').toLowerCase();
   const startMs = b?.startsAt ? new Date(b.startsAt).getTime() : NaN;
+  const expiresMs = b?.expiresAt ? new Date(b.expiresAt).getTime() : NaN;
+  const status = String(b?.status || '').toLowerCase();
+  const expiredHold = status === 'forfeited' ||
+    (status === 'pending' && Number.isFinite(expiresMs) && expiresMs <= Date.now());
   return !!(
     window.PB_PLATFORM_V1 &&
     ['owner','court_owner'].includes(role) &&
-    String(b?.status || '').toLowerCase() === 'forfeited' &&
+    expiredHold &&
     String(b?.paymentStatus || '').toLowerCase() === 'for_verification' &&
     b?.receiptVerificationId &&
     Number.isFinite(startMs) && startMs > Date.now()
@@ -5506,6 +5515,12 @@ async function openVerifyModal(ref, { returnFocus = null } = {}) {
   $('vmConfirmBtn').textContent = restoreConfirmation
     ? '♻️ Restore Court & Confirm Paid'
     : lateConfirmation ? (latePhase === 'ended' ? '✅ Confirm Paid — Past Booking' : '✅ Confirm Paid & Reserve') : '✅ Received — Confirm';
+  const invalidReceipt = b.receiptExtracted?.receiptEvidence?.successful === false;
+  $('vmConfirmBtn').disabled = invalidReceipt;
+  if (invalidReceipt) {
+    $('vmConfirmBtn').textContent = 'Cannot approve this receipt';
+    $('vmReviewHint').textContent = 'This image shows a failed transfer or does not prove a completed payment. Obtain a successful transaction receipt before confirming.';
+  }
   $('vmMethod').textContent = paymentMethodLabel(b.paymentMethod);
   $('vmGcashRef').textContent = b.gcashRef || '—';
   $('vmName').textContent = b.fullName;
@@ -5631,14 +5646,16 @@ async function vmPopulateReceipt(b){
 
 async function verifyAndConfirm() {
   const ref = $('verifyModal').dataset.ref;
-  if (!ref) return;
+  const button = $('vmConfirmBtn');
+  if (!ref || button.disabled) return;
+  button.disabled = true;
   try {
     const bkForPay = await getBookingGroupByRef(ref);
     if (isDigitalPayment(bkForPay?.paymentMethod) && !bkForPay?.receiptImageUrl) {
       toast('Cannot confirm: no receipt image is attached to this digital payment.', 'err');
       return;
     }
-    if ($('verifyModal').dataset.restoreConfirmation === '1') {
+    if (canRestoreConfirmBooking(bkForPay)) {
       if (!canRestoreConfirmBooking(bkForPay)) {
         toast('Only a System Owner or Court Owner can restore this future expired booking.', 'err');
         return;
@@ -5655,7 +5672,7 @@ async function verifyAndConfirm() {
       renderDash();
       return;
     }
-    if ($('verifyModal').dataset.lateConfirmation === '1') {
+    if (canLateConfirmBooking(bkForPay)) {
       if (!canLateConfirmBooking(bkForPay)) {
         toast('Only a System Owner or Court Owner can confirm this post-start payment.', 'err');
         return;
@@ -5699,6 +5716,8 @@ async function verifyAndConfirm() {
     }).catch(() => {});
   } catch(e) {
     toast(e?.message || 'Failed to confirm booking.', 'err');
+  } finally {
+    button.disabled = false;
   }
 }
 

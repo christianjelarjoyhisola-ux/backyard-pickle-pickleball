@@ -6,6 +6,63 @@ const path = require('node:path');
 const root = __dirname;
 const admin = fs.readFileSync(path.join(root, 'admin.html'), 'utf8');
 const database = fs.readFileSync(path.join(root, 'supabase-config.js'), 'utf8');
+const vm = require('node:vm');
+
+function reviewFunction(name) {
+  const start = admin.indexOf(`function ${name}(`);
+  assert.ok(start >= 0);
+  return admin.slice(start, admin.indexOf('\n}', start) + 2);
+}
+
+test('future elapsed pending holds offer restoration only to owners with unreviewed payment', () => {
+  const context = vm.createContext({ window: { PB_PLATFORM_V1: true }, sess: { role: 'owner' } });
+  vm.runInContext(reviewFunction('canRestoreConfirmBooking'), context);
+  const booking = {
+    status: 'pending', paymentStatus: 'for_verification', receiptVerificationId: 'receipt',
+    startsAt: new Date(Date.now() + 86400000).toISOString(),
+    expiresAt: new Date(Date.now() - 60000).toISOString(),
+  };
+  assert.equal(context.canRestoreConfirmBooking(booking), true);
+  for (const overrides of [
+    { expiresAt: new Date(Date.now() + 60000).toISOString() },
+    { expiresAt: null }, { expiresAt: 'invalid' }, { status: 'cancelled' },
+    { paymentStatus: 'paid' }, { receiptVerificationId: null },
+    { startsAt: new Date(Date.now() - 60000).toISOString() },
+  ]) assert.equal(context.canRestoreConfirmBooking({ ...booking, ...overrides }), false);
+  assert.equal(context.canRestoreConfirmBooking({ ...booking, status: 'forfeited', expiresAt: null }), true);
+  context.sess.role = 'staff';
+  assert.equal(context.canRestoreConfirmBooking(booking), false);
+});
+
+test('confirmation rechecks expiry after opening the modal and prevents concurrent submissions', async () => {
+  let restoreCount = 0;
+  let finish;
+  const pending = new Promise(resolve => { finish = resolve; });
+  const button = { disabled: false };
+  const context = vm.createContext({
+    window: { PB_PLATFORM_V1: true }, sess: { role: 'owner' },
+    $: id => id === 'vmConfirmBtn' ? button : { dataset: { ref: 'PB-TEST' } },
+    getBookingGroupByRef: async () => ({
+      ref: 'PB-TEST', status: 'pending', paymentStatus: 'for_verification',
+      receiptVerificationId: 'receipt', receiptImageUrl: 'protected',
+      startsAt: new Date(Date.now() + 86400000).toISOString(),
+      expiresAt: new Date(Date.now() - 60000).toISOString(),
+    }),
+    isDigitalPayment: () => true, confirm: () => true,
+    DB: { restoreExpiredPayment: async () => { restoreCount++; await pending; } },
+    closeVerifyModal() {}, toast() {}, renderBookings: async () => {},
+    renderDash() {}, _curSection: 'bookings',
+  });
+  vm.runInContext(reviewFunction('canRestoreConfirmBooking'), context);
+  vm.runInContext('async ' + reviewFunction('verifyAndConfirm'), context);
+  const first = context.verifyAndConfirm();
+  await context.verifyAndConfirm();
+  assert.equal(restoreCount, 1);
+  assert.equal(button.disabled, true);
+  finish();
+  await first;
+  assert.equal(button.disabled, false);
+});
 
 test('grouped bookings keep the row that owns the receipt evidence', () => {
   assert.match(admin, /const receiptItem = items\.find\(b => b\.receiptImageUrl\)/);
